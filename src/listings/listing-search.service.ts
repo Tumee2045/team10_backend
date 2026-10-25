@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ListingStatus, ListingType, Prisma } from '@prisma/client';
 import { AuthUser } from '../common/auth-user';
-import { Page, pageArgs } from '../common/http/page';
+import { findPage } from '../common/http/page';
 import { PrismaService } from '../prisma/prisma.service';
 import { withCoverUrl } from '../prisma/selects';
 import { ListingQueryDto } from './dto/listing-query.dto';
@@ -19,22 +19,23 @@ export class ListingSearchService {
 
   async search(query: ListingQueryDto, viewer?: AuthUser) {
     const where = this.buildWhere(query);
-    const [rows, total] = await Promise.all([
-      this.prisma.listing.findMany({
-        where,
-        select: listingCardSelect,
-        orderBy: this.buildOrderBy(query),
-        ...pageArgs(query),
-      }),
-      this.prisma.listing.count({ where }),
-    ]);
+    const page = await findPage(
+      query,
+      (p) =>
+        this.prisma.listing.findMany({
+          where,
+          select: listingCardSelect,
+          orderBy: this.buildOrderBy(query),
+          ...p,
+        }),
+      () => this.prisma.listing.count({ where }),
+    );
 
-    const favoriteIds = await this.favoriteIdsOf(viewer, rows);
-    const items = rows.map((row) => ({
+    const favoriteIds = await this.favoriteIdsOf(viewer, page.items);
+    return page.map((row) => ({
       ...withCoverUrl(row),
       isFavorite: favoriteIds.has(row.id),
     }));
-    return Page.of(items, total, query);
   }
 
   async mapPoints(query: ListingQueryDto) {

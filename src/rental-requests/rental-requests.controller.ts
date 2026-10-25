@@ -1,25 +1,15 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  Query,
-} from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth-user';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ResponseMessage } from '../common/http/response-message.decorator';
-import { ParseBigIntPipe } from '../common/pipes/parse-bigint.pipe';
 import { CreateRentalRequestDto } from './dto/create-rental-request.dto';
 import { RejectRentalRequestDto } from './dto/reject-rental-request.dto';
 import { RentalRequestQueryDto } from './dto/rental-request-query.dto';
 import { RentalRequestsService } from './rental-requests.service';
+import { Action, IdParam } from '../common/http/route.decorators';
 
 @ApiTags('rental-requests')
-@ApiBearerAuth()
 @Controller('rental-requests')
 export class RentalRequestsController {
   constructor(private readonly requests: RentalRequestsService) {}
@@ -53,28 +43,20 @@ export class RentalRequestsController {
   }
 
   @Get(':id')
-  findOne(
-    @Param('id', ParseBigIntPipe) id: bigint,
-    @CurrentUser() user: AuthUser,
-  ) {
+  findOne(@IdParam() id: bigint, @CurrentUser() user: AuthUser) {
     return this.requests.findOne(id, user);
   }
 
   @Post(':id/approve')
-  @HttpCode(HttpStatus.OK)
-  @ResponseMessage('Rental request approved')
-  approve(
-    @Param('id', ParseBigIntPipe) id: bigint,
-    @CurrentUser() user: AuthUser,
-  ) {
+  @Action('Rental request approved')
+  approve(@IdParam() id: bigint, @CurrentUser() user: AuthUser) {
     return this.requests.approve(id, user);
   }
 
   @Post(':id/reject')
-  @HttpCode(HttpStatus.OK)
-  @ResponseMessage('Rental request rejected')
+  @Action('Rental request rejected')
   reject(
-    @Param('id', ParseBigIntPipe) id: bigint,
+    @IdParam() id: bigint,
     @CurrentUser() user: AuthUser,
     @Body() dto: RejectRentalRequestDto,
   ) {
@@ -82,12 +64,8 @@ export class RentalRequestsController {
   }
 
   @Post(':id/cancel')
-  @HttpCode(HttpStatus.OK)
-  @ResponseMessage('Rental request cancelled')
-  cancel(
-    @Param('id', ParseBigIntPipe) id: bigint,
-    @CurrentUser() user: AuthUser,
-  ) {
+  @Action('Rental request cancelled')
+  cancel(@IdParam() id: bigint, @CurrentUser() user: AuthUser) {
     return this.requests.cancel(id, user);
   }
 }

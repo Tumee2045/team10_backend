@@ -1,34 +1,20 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import {
-  IsEmail,
-  IsOptional,
-  IsString,
-  Length,
-  Matches,
-  MaxLength,
-} from 'class-validator';
+import { Email, OptionalPhone, Text, Trim } from '../../common/dto/validators';
 
 export class RegisterDto {
-  @ApiProperty({ example: 'bat@example.com' })
-  @Transform(({ value }: { value: string }) => value?.trim().toLowerCase())
-  @IsEmail()
-  @MaxLength(255)
+  /** @example bat@example.com */
+  @Email()
   email!: string;
 
-  @ApiProperty({ minLength: 8, example: 'secret123' })
-  @IsString()
-  @Length(8, 72) // bcrypt only uses the first 72 bytes
+  /** 8–72 characters (bcrypt only uses the first 72 bytes). @example secret123 */
+  @Text(8, 72)
   password!: string;
 
-  @ApiProperty({ example: 'Бат Болд' })
-  @Transform(({ value }: { value: string }) => value?.trim())
-  @IsString()
-  @Length(2, 100)
+  /** @example "Бат Болд" */
+  @Trim()
+  @Text(2, 100)
   fullName!: string;
 
-  @ApiPropertyOptional({ example: '99112233' })
-  @IsOptional()
-  @Matches(/^\+?[0-9]{8,15}$/, { message: 'phone must be 8–15 digits' })
+  /** @example "99112233" */
+  @OptionalPhone()
   phone?: string;
 }

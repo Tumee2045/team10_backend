@@ -1,10 +1,11 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
 import { ResponseMessage } from '../common/http/response-message.decorator';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { Action } from '../common/http/route.decorators';
 
 @ApiTags('auth')
 @Public()
@@ -20,8 +21,7 @@ export class AuthController {
   }
 
   @Post('login')
-  @HttpCode(HttpStatus.OK)
-  @ResponseMessage('Logged in successfully')
+  @Action('Logged in successfully')
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto);
   }

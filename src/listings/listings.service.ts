@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ListingStatus, UserRole } from '@prisma/client';
 import { AuthUser } from '../common/auth-user';
-import { Page, pageArgs } from '../common/http/page';
+import { findPage } from '../common/http/page';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { withCoverUrl } from '../prisma/selects';
@@ -42,16 +42,18 @@ export class ListingsService {
 
   async findMine(userId: bigint, query: MyListingsQueryDto) {
     const where = { ownerId: userId, status: query.status };
-    const [rows, total] = await Promise.all([
-      this.prisma.listing.findMany({
-        where,
-        select: listingCardSelect,
-        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
-        ...pageArgs(query),
-      }),
-      this.prisma.listing.count({ where }),
-    ]);
-    return Page.of(rows.map(withCoverUrl), total, query);
+    const page = await findPage(
+      query,
+      (p) =>
+        this.prisma.listing.findMany({
+          where,
+          select: listingCardSelect,
+          orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+          ...p,
+        }),
+      () => this.prisma.listing.count({ where }),
+    );
+    return page.map(withCoverUrl);
   }
 
   async findOne(id: bigint, viewer?: AuthUser) {

@@ -56,20 +56,20 @@ Wrapping is automatic (`ResponseInterceptor` / `HttpExceptionFilter`). **Don't b
 }
 ```
 
-- `message` on success: add `@ResponseMessage('...')` on create/update/delete/action routes. Plain GETs keep the default `"Success"`.
+- `message` on success: add `@ResponseMessage('...')` on create/update/delete routes, or `@Action('...')` on action POSTs. Plain GETs keep the default `"Success"`.
 - Delete / void actions return `data: null`.
 
 ## 2. Status codes
 
-| Code | When                                                                                | Throw                                      |
-| ---- | ----------------------------------------------------------------------------------- | ------------------------------------------ |
-| 200  | Read, update, action (`POST /x/:id/approve`, etc.)                                  | `@HttpCode(HttpStatus.OK)` on action POSTs |
-| 201  | Something new was created (`POST /listings`)                                        | default for POST                           |
-| 400  | Input is wrong (beyond what DTO validation catches)                                 | `BadRequestException`                      |
-| 401  | No token, or a bad one                                                              | handled by `JwtAuthGuard`                  |
-| 403  | You can **see** it but may not **change** it (someone else's public listing)        | `ForbiddenException`                       |
-| 404  | Doesn't exist, **or** it's private and not yours (other people's requests or chats) | `NotFoundException`                        |
-| 409  | Wrong state or duplicate (already approved, already reviewed…)                      | `ConflictException`                        |
+| Code | When                                                                                | Throw                                          |
+| ---- | ----------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 200  | Read, update, action (`POST /x/:id/approve`, etc.)                                  | `@Action('Listing published')` on action POSTs |
+| 201  | Something new was created (`POST /listings`)                                        | default for POST                               |
+| 400  | Input is wrong (beyond what DTO validation catches)                                 | `BadRequestException`                          |
+| 401  | No token, or a bad one                                                              | handled by `JwtAuthGuard`                      |
+| 403  | You can **see** it but may not **change** it (someone else's public listing)        | `ForbiddenException`                           |
+| 404  | Doesn't exist, **or** it's private and not yours (other people's requests or chats) | `NotFoundException`                            |
+| 409  | Wrong state or duplicate (already approved, already reviewed…)                      | `ConflictException`                            |
 
 ## 3. Layers
 
@@ -81,6 +81,7 @@ Controller  →  Service  →  Prisma
 - **Controller:** routes, decorators, pipes, and one call to a service. No `if` logic and no Prisma.
 - **Service:** every business rule and permission check. Throws HTTP exceptions.
 - Pure helpers with no DB access go in their own file (`listing-pricing.ts`, `listing-status.ts`).
+- Paged lists: `return findPage(query, (p) => prisma.x.findMany({ where, ...p }), () => prisma.x.count({ where }))`.
 - Keep a service under ~250 lines. Split it by responsibility (e.g. `ListingSearchService` vs `ListingsService`).
 
 ## 4. Files and naming
@@ -101,13 +102,36 @@ src/<feature>/
 
 ## 5. Types and data
 
-- Route ids: `@Param('id', ParseBigIntPipe) id: bigint`.
+- Route ids: `@IdParam() id: bigint` (or `@IdParam('listingId')`).
 - Ids in a request body are `number` in the DTO. Convert with `BigInt(dto.x)` **at the start of the service**.
 - Money (MNT) is `bigint` in the DB and a `number` in DTOs and JSON.
 - Reuse the shared selects in `src/prisma/selects.ts` (`userBriefSelect`, `listingBriefSelect`, `coverPhotoSelect`, `withCoverUrl`). Don't write new copies.
 - `passwordHash` is left out of every query automatically. Only the auth code opts back in.
 
-## 6. Writing readable code
+## 6. DTOs: use the shared decorators
+
+Swagger docs are generated from the TypeScript types by the Nest CLI plugin, so **don't add `@ApiProperty`**.
+Put descriptions and examples in a JSDoc comment. Quote string examples:
+
+```ts
+/** Required for RENT. @example 1500000 */
+@OptionalInt({ min: 0 })
+monthlyRent?: number;
+
+/** @example "2 өрөө байр" */
+@Text(3, 150)
+title!: string;
+```
+
+Decorators in `src/common/dto/validators.ts`:
+
+| Body                                                                                                                                 | Query string                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `Int`, `OptionalInt`, `Decimal`, `Text`, `OptionalText`, `OptionalBoolean`, `Enum`, `OptionalEnum`, `Email`, `OptionalPhone`, `Trim` | `QueryInt`, `QueryNumber`, `QueryIntArray`, `QueryBoolean` |
+
+Query params arrive as strings, so always use the `Query*` decorators for them.
+
+## 7. Writing readable code
 
 - Return early on errors instead of nesting `if`s.
 - Give a complex condition a name: `const canView = …; if (!canView) throw …`.
@@ -116,7 +140,7 @@ src/<feature>/
 - No magic numbers. Use a named constant (`MAX_PHOTOS_PER_LISTING`).
 - Notifications are created **inside the same transaction** as the action: `notifications.create(input, tx)`.
 
-## 7. Before you commit
+## 8. Before you commit
 
 The pre-commit hook runs ESLint and Prettier on staged files automatically. Before pushing, also run:
 

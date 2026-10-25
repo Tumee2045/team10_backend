@@ -1,15 +1,7 @@
-import { ApiPropertyOptional, IntersectionType } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import {
-  IsIn,
-  IsNumber,
-  IsOptional,
-  IsString,
-  Max,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { ApiProperty, IntersectionType } from '@nestjs/swagger';
+import { IsIn, IsOptional } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { OptionalText, QueryNumber } from '../../common/dto/validators';
 import { SearchFiltersDto } from './search-filters.dto';
 
 export const LISTING_SORTS = [
@@ -24,62 +16,30 @@ export class ListingQueryDto extends IntersectionType(
   SearchFiltersDto,
   PaginationQueryDto,
 ) {
-  @ApiPropertyOptional({
-    description: 'Text search in title/address/description',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
+  /** Text search in title, address and description. */
+  @OptionalText(100)
   q?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(0)
+  @QueryNumber({ min: 0 })
   minArea?: number;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(0)
+  @QueryNumber({ min: 0 })
   maxArea?: number;
 
-  // Map bounding box — send all four or none.
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(-90)
-  @Max(90)
+  // Map bounding box: send all four or none.
+  @QueryNumber({ min: -90, max: 90 })
   minLat?: number;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(-90)
-  @Max(90)
+  @QueryNumber({ min: -90, max: 90 })
   maxLat?: number;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(-180)
-  @Max(180)
+  @QueryNumber({ min: -180, max: 180 })
   minLng?: number;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(-180)
-  @Max(180)
+  @QueryNumber({ min: -180, max: 180 })
   maxLng?: number;
 
-  @ApiPropertyOptional({ enum: LISTING_SORTS, default: 'newest' })
+  @ApiProperty({ enum: LISTING_SORTS, required: false })
   @IsOptional()
   @IsIn(LISTING_SORTS)
   sort: ListingSort = 'newest';

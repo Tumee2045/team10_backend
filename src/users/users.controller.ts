@@ -2,26 +2,24 @@ import {
   Body,
   Controller,
   Get,
-  Param,
   Patch,
   Post,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth-user';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { ResponseMessage } from '../common/http/response-message.decorator';
 import { ImageFilesPipe } from '../common/pipes/image-files.pipe';
-import { ParseBigIntPipe } from '../common/pipes/parse-bigint.pipe';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UsersService } from './users.service';
+import { IdParam } from '../common/http/route.decorators';
 
 @ApiTags('users')
-@ApiBearerAuth()
 @Controller('users')
 export class UsersController {
   constructor(private readonly users: UsersService) {}
@@ -65,7 +63,7 @@ export class UsersController {
 
   @Public()
   @Get(':id')
-  findPublicProfile(@Param('id', ParseBigIntPipe) id: bigint) {
+  findPublicProfile(@IdParam() id: bigint) {
     return this.users.findPublicProfile(id);
   }
 }

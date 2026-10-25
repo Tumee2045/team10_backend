@@ -1,29 +1,21 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { IsOptional } from 'class-validator';
 import {
-  IsOptional,
-  IsString,
-  Length,
-  Matches,
-  MaxLength,
-} from 'class-validator';
+  OptionalPhone,
+  OptionalText,
+  Text,
+  Trim,
+} from '../../common/dto/validators';
 
 export class UpdateProfileDto {
-  @ApiPropertyOptional()
   @IsOptional()
-  @Transform(({ value }: { value: string }) => value?.trim())
-  @IsString()
-  @Length(2, 100)
+  @Trim()
+  @Text(2, 100)
   fullName?: string;
 
-  @ApiPropertyOptional({ example: '99112233', nullable: true })
-  @IsOptional()
-  @Matches(/^\+?[0-9]{8,15}$/, { message: 'phone must be 8–15 digits' })
+  /** @example "99112233" */
+  @OptionalPhone()
   phone?: string;
 
-  @ApiPropertyOptional({ maxLength: 500 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
+  @OptionalText(500)
   bio?: string;
 }

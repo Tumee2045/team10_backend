@@ -8,7 +8,7 @@ import {
 import { NotificationType, RequestStatus } from '@prisma/client';
 import { AuthUser } from '../common/auth-user';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
-import { Page, pageArgs } from '../common/http/page';
+import { findPage } from '../common/http/page';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { userBriefSelect } from '../prisma/selects';
@@ -71,16 +71,17 @@ export class ReviewsService {
   /** Reviews a user received, newest first. */
   async findForUser(userId: bigint, query: PaginationQueryDto) {
     const where = { targetUserId: userId };
-    const [items, total] = await Promise.all([
-      this.prisma.review.findMany({
-        where,
-        include: withAuthor,
-        orderBy: { createdAt: 'desc' },
-        ...pageArgs(query),
-      }),
-      this.prisma.review.count({ where }),
-    ]);
-    return Page.of(items, total, query);
+    return findPage(
+      query,
+      (p) =>
+        this.prisma.review.findMany({
+          where,
+          include: withAuthor,
+          orderBy: { createdAt: 'desc' },
+          ...p,
+        }),
+      () => this.prisma.review.count({ where }),
+    );
   }
 
   /** `{ average: 4.5, count: 12 }`, average rounded to 1 decimal. Used on profiles. */

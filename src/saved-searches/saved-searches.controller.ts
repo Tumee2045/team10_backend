@@ -3,23 +3,21 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   Patch,
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth-user';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { ResponseMessage } from '../common/http/response-message.decorator';
-import { ParseBigIntPipe } from '../common/pipes/parse-bigint.pipe';
 import { CreateSavedSearchDto } from './dto/create-saved-search.dto';
 import { UpdateSavedSearchDto } from './dto/update-saved-search.dto';
 import { SavedSearchesService } from './saved-searches.service';
+import { IdParam } from '../common/http/route.decorators';
 
 @ApiTags('saved-searches')
-@ApiBearerAuth()
 @Controller('saved-searches')
 export class SavedSearchesController {
   constructor(private readonly savedSearches: SavedSearchesService) {}
@@ -39,7 +37,7 @@ export class SavedSearchesController {
   @ResponseMessage('Saved search updated')
   update(
     @CurrentUser() user: AuthUser,
-    @Param('id', ParseBigIntPipe) id: bigint,
+    @IdParam() id: bigint,
     @Body() dto: UpdateSavedSearchDto,
   ) {
     return this.savedSearches.update(user.id, id, dto);
@@ -47,10 +45,7 @@ export class SavedSearchesController {
 
   @Delete(':id')
   @ResponseMessage('Saved search deleted')
-  remove(
-    @CurrentUser() user: AuthUser,
-    @Param('id', ParseBigIntPipe) id: bigint,
-  ) {
+  remove(@CurrentUser() user: AuthUser, @IdParam() id: bigint) {
     return this.savedSearches.remove(user.id, id);
   }
 
@@ -58,7 +53,7 @@ export class SavedSearchesController {
   @ApiOperation({ summary: 'Run the saved filters (paged ACTIVE listings)' })
   findListings(
     @CurrentUser() user: AuthUser,
-    @Param('id', ParseBigIntPipe) id: bigint,
+    @IdParam() id: bigint,
     @Query() query: PaginationQueryDto,
   ) {
     return this.savedSearches.findListings(user, id, query);

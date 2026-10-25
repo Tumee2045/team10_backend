@@ -12,12 +12,24 @@ export class Page<T> {
     readonly limit: number,
   ) {}
 
-  static of<T>(items: T[], total: number, query: PaginationQueryDto) {
-    return new Page(items, total, query.page, query.limit);
+  map<U>(fn: (item: T) => U): Page<U> {
+    return new Page(this.items.map(fn), this.total, this.page, this.limit);
   }
 }
 
-/** Prisma `skip`/`take` for a page query. */
-export function pageArgs(query: PaginationQueryDto) {
-  return { skip: (query.page - 1) * query.limit, take: query.limit };
+/**
+ * Runs the page query and the count in parallel.
+ *
+ *   return findPage(query,
+ *     (page) => this.prisma.listing.findMany({ where, ...page }),
+ *     () => this.prisma.listing.count({ where }));
+ */
+export async function findPage<T>(
+  query: PaginationQueryDto,
+  findMany: (page: { skip: number; take: number }) => Promise<T[]>,
+  count: () => Promise<number>,
+): Promise<Page<T>> {
+  const page = { skip: (query.page - 1) * query.limit, take: query.limit };
+  const [items, total] = await Promise.all([findMany(page), count()]);
+  return new Page(items, total, query.page, query.limit);
 }

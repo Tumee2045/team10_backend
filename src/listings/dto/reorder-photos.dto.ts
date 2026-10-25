@@ -1,12 +1,7 @@
-import { ApiProperty } from '@nestjs/swagger';
 import { ArrayMinSize, IsInt } from 'class-validator';
 
 export class ReorderPhotosDto {
-  @ApiProperty({
-    type: [Number],
-    description:
-      'All photo ids of the listing in the new order. First = cover.',
-  })
+  /** Every photo id of the listing, in the new order. The first one is the cover. */
   @IsInt({ each: true })
   @ArrayMinSize(1)
   photoIds!: number[];

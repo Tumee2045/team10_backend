@@ -1,25 +1,16 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Patch,
-  Post,
-  Query,
-} from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Patch, Post, Query } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth-user';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { ResponseMessage } from '../common/http/response-message.decorator';
-import { ParseBigIntPipe } from '../common/pipes/parse-bigint.pipe';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
 import { ReviewsService } from './reviews.service';
+import { IdParam } from '../common/http/route.decorators';
 
 @ApiTags('reviews')
-@ApiBearerAuth()
 @Controller()
 export class ReviewsController {
   constructor(private readonly reviews: ReviewsService) {}
@@ -34,7 +25,7 @@ export class ReviewsController {
   @ResponseMessage('Review updated')
   update(
     @CurrentUser() user: AuthUser,
-    @Param('id', ParseBigIntPipe) id: bigint,
+    @IdParam() id: bigint,
     @Body() dto: UpdateReviewDto,
   ) {
     return this.reviews.update(user, id, dto);
@@ -42,10 +33,7 @@ export class ReviewsController {
 
   @Public()
   @Get('users/:id/reviews')
-  findForUser(
-    @Param('id', ParseBigIntPipe) id: bigint,
-    @Query() query: PaginationQueryDto,
-  ) {
+  findForUser(@IdParam() id: bigint, @Query() query: PaginationQueryDto) {
     return this.reviews.findForUser(id, query);
   }
 }

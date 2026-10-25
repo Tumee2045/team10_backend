@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { NotificationType, Prisma } from '@prisma/client';
-import { Page, pageArgs } from '../common/http/page';
+import { findPage } from '../common/http/page';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationQueryDto } from './dto/notification-query.dto';
 
@@ -38,15 +38,16 @@ export class NotificationsService {
       userId,
       readAt: query.unreadOnly ? null : undefined,
     };
-    const [items, total] = await Promise.all([
-      this.prisma.notification.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        ...pageArgs(query),
-      }),
-      this.prisma.notification.count({ where }),
-    ]);
-    return Page.of(items, total, query);
+    return findPage(
+      query,
+      (p) =>
+        this.prisma.notification.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          ...p,
+        }),
+      () => this.prisma.notification.count({ where }),
+    );
   }
 
   async countUnread(userId: bigint) {

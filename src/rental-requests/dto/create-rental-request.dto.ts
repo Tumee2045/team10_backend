@@ -1,36 +1,19 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsDateString,
-  IsInt,
-  IsOptional,
-  IsString,
-  Max,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsDateString } from 'class-validator';
+import { Int, OptionalText } from '../../common/dto/validators';
 
 export class CreateRentalRequestDto {
-  @ApiProperty({ example: 1 })
-  @IsInt()
-  @Min(1)
+  /** @example 1 */
+  @Int({ min: 1 })
   listingId!: number;
 
-  @ApiProperty({
-    example: '2026-11-01',
-    description: 'YYYY-MM-DD, today or later',
-  })
+  /** YYYY-MM-DD, today or later. @example "2026-11-01" */
   @IsDateString({ strict: true })
   startDate!: string;
 
-  @ApiProperty({ example: 6 })
-  @IsInt()
-  @Min(1)
-  @Max(120)
+  /** @example 6 */
+  @Int({ min: 1, max: 120 })
   months!: number;
 
-  @ApiPropertyOptional({ maxLength: 1000 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(1000)
+  @OptionalText(1000)
   note?: string;
 }

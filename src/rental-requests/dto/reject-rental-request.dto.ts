@@ -1,10 +1,6 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, Length } from 'class-validator';
+import { OptionalText } from '../../common/dto/validators';
 
 export class RejectRentalRequestDto {
-  @ApiPropertyOptional({ maxLength: 500 })
-  @IsOptional()
-  @IsString()
-  @Length(1, 500)
+  @OptionalText(500)
   reason?: string;
 }

@@ -1,14 +1,13 @@
-import { Controller, Delete, Get, Param, Put, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Controller, Delete, Get, Put, Query } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth-user';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { ResponseMessage } from '../common/http/response-message.decorator';
-import { ParseBigIntPipe } from '../common/pipes/parse-bigint.pipe';
 import { FavoritesService } from './favorites.service';
+import { IdParam } from '../common/http/route.decorators';
 
 @ApiTags('favorites')
-@ApiBearerAuth()
 @Controller('favorites')
 export class FavoritesController {
   constructor(private readonly favorites: FavoritesService) {}
@@ -20,10 +19,7 @@ export class FavoritesController {
 
   @Put(':listingId')
   @ResponseMessage('Added to favorites')
-  add(
-    @CurrentUser() user: AuthUser,
-    @Param('listingId', ParseBigIntPipe) listingId: bigint,
-  ) {
+  add(@CurrentUser() user: AuthUser, @IdParam('listingId') listingId: bigint) {
     return this.favorites.add(user.id, listingId);
   }
 
@@ -31,7 +27,7 @@ export class FavoritesController {
   @ResponseMessage('Removed from favorites')
   remove(
     @CurrentUser() user: AuthUser,
-    @Param('listingId', ParseBigIntPipe) listingId: bigint,
+    @IdParam('listingId') listingId: bigint,
   ) {
     return this.favorites.remove(user.id, listingId);
   }

@@ -1,31 +1,14 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsInt,
-  IsOptional,
-  IsString,
-  Max,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { Int, OptionalText } from '../../common/dto/validators';
 
 export class CreateReviewDto {
-  @ApiProperty({
-    example: 1,
-    description: 'An APPROVED rental request you are part of',
-  })
-  @IsInt()
-  @Min(1)
+  /** An APPROVED rental request you are part of. @example 1 */
+  @Int({ min: 1 })
   rentalRequestId!: number;
 
-  @ApiProperty({ minimum: 1, maximum: 5, example: 5 })
-  @IsInt()
-  @Min(1)
-  @Max(5)
+  /** @example 5 */
+  @Int({ min: 1, max: 5 })
   rating!: number;
 
-  @ApiPropertyOptional({ maxLength: 1000 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(1000)
+  @OptionalText(1000)
   comment?: string;
 }

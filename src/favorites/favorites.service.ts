@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
-import { Page, pageArgs } from '../common/http/page';
+import { findPage } from '../common/http/page';
 import { listingCardSelect } from '../listings/listing.selects';
 import { PrismaService } from '../prisma/prisma.service';
 import { withCoverUrl } from '../prisma/selects';
@@ -11,21 +11,21 @@ export class FavoritesService {
 
   async findAll(userId: bigint, query: PaginationQueryDto) {
     const where = { userId };
-    const [rows, total] = await Promise.all([
-      this.prisma.favorite.findMany({
-        where,
-        select: { createdAt: true, listing: { select: listingCardSelect } },
-        orderBy: { createdAt: 'desc' },
-        ...pageArgs(query),
-      }),
-      this.prisma.favorite.count({ where }),
-    ]);
-
-    const items = rows.map((row) => ({
+    const page = await findPage(
+      query,
+      (p) =>
+        this.prisma.favorite.findMany({
+          where,
+          select: { createdAt: true, listing: { select: listingCardSelect } },
+          orderBy: { createdAt: 'desc' },
+          ...p,
+        }),
+      () => this.prisma.favorite.count({ where }),
+    );
+    return page.map((row) => ({
       ...withCoverUrl(row.listing),
       favoritedAt: row.createdAt,
     }));
-    return Page.of(items, total, query);
   }
 
   /** Idempotent: adding the same listing twice is fine. */

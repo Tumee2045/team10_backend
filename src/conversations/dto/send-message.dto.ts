@@ -1,14 +1,8 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import { IsString, Length } from 'class-validator';
+import { Text, Trim } from '../../common/dto/validators';
 
 export class SendMessageDto {
-  @ApiProperty({
-    maxLength: 2000,
-    example: 'Сайн байна уу, байр одоо сул байгаа юу?',
-  })
-  @Transform(({ value }: { value: string }) => value?.trim())
-  @IsString()
-  @Length(1, 2000)
+  /** @example "Сайн байна уу, байр одоо сул байгаа юу?" */
+  @Trim()
+  @Text(1, 2000)
   body!: string;
 }

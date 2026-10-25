@@ -15,7 +15,7 @@ import {
   UserRole,
 } from '@prisma/client';
 import { AuthUser } from '../common/auth-user';
-import { Page, pageArgs } from '../common/http/page';
+import { findPage } from '../common/http/page';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -249,16 +249,18 @@ export class RentalRequestsService {
     where: Prisma.RentalRequestWhereInput,
     query: RentalRequestQueryDto,
   ) {
-    const [rows, total] = await Promise.all([
-      this.prisma.rentalRequest.findMany({
-        where,
-        include: requestInclude,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        ...pageArgs(query),
-      }),
-      this.prisma.rentalRequest.count({ where }),
-    ]);
-    return Page.of(rows.map(toView), total, query);
+    const page = await findPage(
+      query,
+      (p) =>
+        this.prisma.rentalRequest.findMany({
+          where,
+          include: requestInclude,
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          ...p,
+        }),
+      () => this.prisma.rentalRequest.count({ where }),
+    );
+    return page.map(toView);
   }
 }
 
