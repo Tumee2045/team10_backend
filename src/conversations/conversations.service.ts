@@ -4,31 +4,29 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ListingStatus, NotificationType, Prisma } from '@prisma/client';
+import {
+  Conversation,
+  ListingStatus,
+  NotificationType,
+  Prisma,
+} from '@prisma/client';
 import { AuthUser } from '../common/auth-user';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { MessagesQueryDto } from './dto/conversation.dto';
-
-const userBrief = {
-  select: { id: true, fullName: true, avatarUrl: true },
-} as const;
+import {
+  coverPhotoSelect,
+  userBriefSelect,
+  withCoverUrl,
+} from '../prisma/selects';
+import { MessagesQueryDto } from './dto/messages-query.dto';
+import { StartConversationDto } from './dto/start-conversation.dto';
 
 const conversationInclude = {
   listing: {
-    select: {
-      id: true,
-      title: true,
-      status: true,
-      photos: {
-        select: { url: true },
-        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-        take: 1,
-      },
-    },
+    select: { id: true, title: true, status: true, photos: coverPhotoSelect },
   },
-  owner: userBrief,
-  client: userBrief,
+  owner: { select: userBriefSelect },
+  client: { select: userBriefSelect },
   messages: { orderBy: { id: 'desc' }, take: 1 },
 } satisfies Prisma.ConversationInclude;
 
@@ -44,11 +42,11 @@ export class ConversationsService {
     private readonly notifications: NotificationsService,
   ) {}
 
-  /** Opens (or returns the existing) chat with the owner of a listing. */
-  async start(user: AuthUser, listingId: bigint) {
+  /** Opens a chat with the listing owner, or returns the existing one. */
+  async start(user: AuthUser, dto: StartConversationDto) {
+    const listingId = BigInt(dto.listingId);
     const listing = await this.prisma.listing.findUnique({
       where: { id: listingId },
-      select: { id: true, ownerId: true, status: true },
     });
     if (!listing) throw new NotFoundException('Listing not found');
     if (listing.ownerId === user.id) {
@@ -71,8 +69,8 @@ export class ConversationsService {
     return this.toView(created, user.id);
   }
 
-  /** My conversations (as owner or client), newest activity first, with unread counts. */
-  async list(user: AuthUser) {
+  /** My chats (as owner or client), most recent activity first. */
+  async findAll(user: AuthUser) {
     const rows = await this.prisma.conversation.findMany({
       where: { OR: [{ ownerId: user.id }, { clientId: user.id }] },
       include: conversationInclude,
@@ -81,122 +79,139 @@ export class ConversationsService {
         { createdAt: 'desc' },
       ],
     });
-    return Promise.all(rows.map((r) => this.toView(r, user.id)));
+    return Promise.all(rows.map((row) => this.toView(row, user.id)));
   }
 
-  async get(user: AuthUser, id: bigint) {
+  async findOne(user: AuthUser, id: bigint) {
     const row = await this.prisma.conversation.findUnique({
       where: { id },
       include: conversationInclude,
     });
-    if (!row || (row.ownerId !== user.id && row.clientId !== user.id)) {
+    if (!row || !isParticipant(row, user.id)) {
       throw new NotFoundException('Conversation not found');
     }
     return this.toView(row, user.id);
   }
 
-  /** Paged history, returned oldest → newest. Use `before` to load older pages. */
-  async messages(user: AuthUser, id: bigint, q: MessagesQueryDto) {
-    await this.getParticipant(user, id);
+  /** History oldest → newest. Pass `before` (a message id) to load older pages. */
+  async findMessages(user: AuthUser, id: bigint, query: MessagesQueryDto) {
+    await this.findParticipating(user, id);
     const rows = await this.prisma.message.findMany({
       where: {
         conversationId: id,
-        ...(q.before ? { id: { lt: BigInt(q.before) } } : {}),
+        id: query.before ? { lt: BigInt(query.before) } : undefined,
       },
       orderBy: { id: 'desc' },
-      take: q.limit + 1,
+      take: query.limit + 1, // one extra row tells us if there are more
     });
-    const hasMore = rows.length > q.limit;
-    return { items: rows.slice(0, q.limit).reverse(), hasMore };
+
+    const hasMore = rows.length > query.limit;
+    return { items: rows.slice(0, query.limit).reverse(), hasMore };
   }
 
-  async send(user: AuthUser, id: bigint, body: string) {
-    const conv = await this.getParticipant(user, id);
-    const isOwner = conv.ownerId === user.id;
-    const recipientId = isOwner ? conv.clientId : conv.ownerId;
+  async sendMessage(user: AuthUser, id: bigint, body: string) {
+    const conversation = await this.findParticipating(user, id);
+    const isOwner = conversation.ownerId === user.id;
 
     return this.prisma.$transaction(async (tx) => {
       const message = await tx.message.create({
         data: { conversationId: id, senderId: user.id, body },
       });
+      // Sending a message also means I've read everything before it.
       await tx.conversation.update({
         where: { id },
         data: {
           lastMessageAt: message.createdAt,
-          // sending implies I've read everything up to now
           ...(isOwner
             ? { ownerLastReadAt: message.createdAt }
             : { clientLastReadAt: message.createdAt }),
         },
       });
-
-      // One unread NEW_MESSAGE notification per conversation is enough.
-      const pending = await tx.notification.count({
-        where: {
-          userId: recipientId,
-          type: NotificationType.NEW_MESSAGE,
-          readAt: null,
-          data: { path: ['conversationId'], equals: Number(id) },
-        },
-      });
-      if (!pending) {
-        const sender = await tx.user.findUniqueOrThrow({
-          where: { id: user.id },
-          select: { fullName: true },
-        });
-        await this.notifications.create(
-          {
-            userId: recipientId,
-            type: NotificationType.NEW_MESSAGE,
-            title: 'Шинэ мессеж',
-            body: `${sender.fullName}: ${body.slice(0, 200)}`,
-            data: { conversationId: id, listingId: conv.listingId },
-          },
-          tx,
-        );
-      }
+      await this.notifyRecipient(tx, conversation, user.id, body);
       return message;
     });
   }
 
-  async markRead(user: AuthUser, id: bigint) {
-    const conv = await this.getParticipant(user, id);
+  async markAsRead(user: AuthUser, id: bigint): Promise<void> {
+    const conversation = await this.findParticipating(user, id);
     const now = new Date();
     await this.prisma.conversation.update({
       where: { id },
       data:
-        conv.ownerId === user.id
+        conversation.ownerId === user.id
           ? { ownerLastReadAt: now }
           : { clientLastReadAt: now },
     });
-    return { ok: true };
   }
 
-  // ---------------------------------------------------------------- helpers
+  // ---------------------------------------------------------------- private
 
-  private async getParticipant(user: AuthUser, id: bigint) {
-    const conv = await this.prisma.conversation.findUnique({ where: { id } });
-    if (!conv || (conv.ownerId !== user.id && conv.clientId !== user.id)) {
+  private async findParticipating(user: AuthUser, id: bigint) {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id },
+    });
+    if (!conversation || !isParticipant(conversation, user.id)) {
       throw new NotFoundException('Conversation not found');
     }
-    return conv;
+    return conversation;
   }
 
-  /** Shape for the client: "the other person", last message, unread count. */
-  private async toView(row: ConversationRow, me: bigint) {
-    const isOwner = row.ownerId === me;
+  /** At most one unread NEW_MESSAGE notification per conversation, so a chat doesn't spam. */
+  private async notifyRecipient(
+    tx: Pick<PrismaService, 'notification' | 'user'>,
+    conversation: Conversation,
+    senderId: bigint,
+    body: string,
+  ) {
+    const recipientId =
+      conversation.ownerId === senderId
+        ? conversation.clientId
+        : conversation.ownerId;
+
+    const alreadyNotified = await tx.notification.count({
+      where: {
+        userId: recipientId,
+        type: NotificationType.NEW_MESSAGE,
+        readAt: null,
+        data: { path: ['conversationId'], equals: Number(conversation.id) },
+      },
+    });
+    if (alreadyNotified) return;
+
+    const sender = await tx.user.findUniqueOrThrow({
+      where: { id: senderId },
+      select: { fullName: true },
+    });
+    await this.notifications.create(
+      {
+        userId: recipientId,
+        type: NotificationType.NEW_MESSAGE,
+        title: 'Шинэ мессеж',
+        body: `${sender.fullName}: ${body.slice(0, 200)}`,
+        data: {
+          conversationId: conversation.id,
+          listingId: conversation.listingId,
+        },
+      },
+      tx,
+    );
+  }
+
+  /** Shape for the client: the other person, last message and unread count. */
+  private async toView(row: ConversationRow, myId: bigint) {
+    const isOwner = row.ownerId === myId;
     const lastReadAt = isOwner ? row.ownerLastReadAt : row.clientLastReadAt;
     const unreadCount = await this.prisma.message.count({
       where: {
         conversationId: row.id,
-        senderId: { not: me },
-        ...(lastReadAt ? { createdAt: { gt: lastReadAt } } : {}),
+        senderId: { not: myId },
+        createdAt: lastReadAt ? { gt: lastReadAt } : undefined,
       },
     });
-    const { photos, ...listing } = row.listing;
+
     return {
       id: row.id,
-      listing: { ...listing, coverUrl: photos[0]?.url ?? null },
+      listing: withCoverUrl(row.listing),
       myRole: isOwner ? 'OWNER' : 'CLIENT',
       otherUser: isOwner ? row.client : row.owner,
       lastMessage: row.messages[0] ?? null,
@@ -205,4 +220,11 @@ export class ConversationsService {
       createdAt: row.createdAt,
     };
   }
+}
+
+function isParticipant(
+  conversation: { ownerId: bigint; clientId: bigint },
+  userId: bigint,
+) {
+  return conversation.ownerId === userId || conversation.clientId === userId;
 }

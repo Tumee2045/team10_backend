@@ -1,4 +1,12 @@
-import { Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth-user';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -13,27 +21,27 @@ export class NotificationsController {
   constructor(private readonly notifications: NotificationsService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser, @Query() q: NotificationQueryDto) {
-    return this.notifications.list(user.id, q);
+  findAll(@CurrentUser() user: AuthUser, @Query() query: NotificationQueryDto) {
+    return this.notifications.findAll(user.id, query);
   }
 
   @Get('unread-count')
-  unreadCount(@CurrentUser() user: AuthUser) {
-    return this.notifications.unreadCount(user.id);
+  countUnread(@CurrentUser() user: AuthUser) {
+    return this.notifications.countUnread(user.id);
   }
 
   @Post('read-all')
-  @HttpCode(200)
-  markAllRead(@CurrentUser() user: AuthUser) {
-    return this.notifications.markAllRead(user.id);
+  @HttpCode(HttpStatus.OK)
+  markAllAsRead(@CurrentUser() user: AuthUser) {
+    return this.notifications.markAllAsRead(user.id);
   }
 
   @Post(':id/read')
-  @HttpCode(200)
-  markRead(
+  @HttpCode(HttpStatus.OK)
+  markAsRead(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseBigIntPipe) id: bigint,
   ) {
-    return this.notifications.markRead(user.id, id);
+    return this.notifications.markAsRead(user.id, id);
   }
 }

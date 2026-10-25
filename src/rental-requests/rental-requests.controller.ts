@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpStatus,
   Param,
   Post,
   Query,
@@ -10,12 +11,11 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth-user';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { ResponseMessage } from '../common/http/response-message.decorator';
 import { ParseBigIntPipe } from '../common/pipes/parse-bigint.pipe';
-import {
-  CreateRentalRequestDto,
-  RejectRentalRequestDto,
-  RentalRequestQueryDto,
-} from './dto/rental-request.dto';
+import { CreateRentalRequestDto } from './dto/create-rental-request.dto';
+import { RejectRentalRequestDto } from './dto/reject-rental-request.dto';
+import { RentalRequestQueryDto } from './dto/rental-request-query.dto';
 import { RentalRequestsService } from './rental-requests.service';
 
 @ApiTags('rental-requests')
@@ -26,22 +26,30 @@ export class RentalRequestsController {
 
   @Post()
   @ApiOperation({
-    summary: '201 Created, 409 if duplicate PENDING or listing not ACTIVE',
+    summary:
+      '409 if you already have a PENDING request or the listing is not ACTIVE',
   })
+  @ResponseMessage('Rental request sent')
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateRentalRequestDto) {
     return this.requests.create(user, dto);
   }
 
   @Get('sent')
-  @ApiOperation({ summary: 'Requests I sent (as renter)' })
-  sent(@CurrentUser() user: AuthUser, @Query() q: RentalRequestQueryDto) {
-    return this.requests.sent(user.id, q);
+  @ApiOperation({ summary: 'Requests I sent as a renter (paged)' })
+  findSent(
+    @CurrentUser() user: AuthUser,
+    @Query() query: RentalRequestQueryDto,
+  ) {
+    return this.requests.findSent(user.id, query);
   }
 
   @Get('received')
-  @ApiOperation({ summary: 'Requests on my listings (as owner)' })
-  received(@CurrentUser() user: AuthUser, @Query() q: RentalRequestQueryDto) {
-    return this.requests.received(user.id, q);
+  @ApiOperation({ summary: 'Requests on my listings (paged)' })
+  findReceived(
+    @CurrentUser() user: AuthUser,
+    @Query() query: RentalRequestQueryDto,
+  ) {
+    return this.requests.findReceived(user.id, query);
   }
 
   @Get(':id')
@@ -53,7 +61,8 @@ export class RentalRequestsController {
   }
 
   @Post(':id/approve')
-  @HttpCode(200)
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Rental request approved')
   approve(
     @Param('id', ParseBigIntPipe) id: bigint,
     @CurrentUser() user: AuthUser,
@@ -62,7 +71,8 @@ export class RentalRequestsController {
   }
 
   @Post(':id/reject')
-  @HttpCode(200)
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Rental request rejected')
   reject(
     @Param('id', ParseBigIntPipe) id: bigint,
     @CurrentUser() user: AuthUser,
@@ -72,7 +82,8 @@ export class RentalRequestsController {
   }
 
   @Post(':id/cancel')
-  @HttpCode(200)
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Rental request cancelled')
   cancel(
     @Param('id', ParseBigIntPipe) id: bigint,
     @CurrentUser() user: AuthUser,

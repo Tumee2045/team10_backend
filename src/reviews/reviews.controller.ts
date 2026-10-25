@@ -11,9 +11,11 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth-user';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
-import { PaginationQueryDto } from '../common/dto/pagination.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { ResponseMessage } from '../common/http/response-message.decorator';
 import { ParseBigIntPipe } from '../common/pipes/parse-bigint.pipe';
-import { CreateReviewDto, UpdateReviewDto } from './dto/review.dto';
+import { CreateReviewDto } from './dto/create-review.dto';
+import { UpdateReviewDto } from './dto/update-review.dto';
 import { ReviewsService } from './reviews.service';
 
 @ApiTags('reviews')
@@ -23,11 +25,13 @@ export class ReviewsController {
   constructor(private readonly reviews: ReviewsService) {}
 
   @Post('reviews')
+  @ResponseMessage('Review submitted')
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateReviewDto) {
     return this.reviews.create(user, dto);
   }
 
   @Patch('reviews/:id')
+  @ResponseMessage('Review updated')
   update(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseBigIntPipe) id: bigint,
@@ -38,10 +42,10 @@ export class ReviewsController {
 
   @Public()
   @Get('users/:id/reviews')
-  forUser(
+  findForUser(
     @Param('id', ParseBigIntPipe) id: bigint,
-    @Query() q: PaginationQueryDto,
+    @Query() query: PaginationQueryDto,
   ) {
-    return this.reviews.forUser(id, q);
+    return this.reviews.findForUser(id, query);
   }
 }

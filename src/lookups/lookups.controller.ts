@@ -1,22 +1,21 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
-import { PrismaService } from '../prisma/prisma.service';
+import { LookupsService } from './lookups.service';
 
-/** Read-only reference data for dropdowns/filters. Seeded by prisma/seed.ts. */
 @ApiTags('lookups')
 @Public()
 @Controller()
 export class LookupsController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly lookups: LookupsService) {}
 
   @Get('districts')
   districts() {
-    return this.prisma.district.findMany({ orderBy: { id: 'asc' } });
+    return this.lookups.districts();
   }
 
   @Get('amenities')
   amenities() {
-    return this.prisma.amenity.findMany({ orderBy: { id: 'asc' } });
+    return this.lookups.amenities();
   }
 }

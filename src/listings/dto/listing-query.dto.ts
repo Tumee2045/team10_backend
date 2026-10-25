@@ -9,7 +9,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { SearchFiltersDto } from './search-filters.dto';
 
 export const LISTING_SORTS = [

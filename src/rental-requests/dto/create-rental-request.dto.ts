@@ -1,17 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RequestStatus } from '@prisma/client';
 import {
   IsDateString,
-  IsEnum,
   IsInt,
   IsOptional,
   IsString,
-  Length,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
-import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 
 export class CreateRentalRequestDto {
   @ApiProperty({ example: 1 })
@@ -37,19 +33,4 @@ export class CreateRentalRequestDto {
   @IsString()
   @MaxLength(1000)
   note?: string;
-}
-
-export class RejectRentalRequestDto {
-  @ApiPropertyOptional({ maxLength: 500 })
-  @IsOptional()
-  @IsString()
-  @Length(1, 500)
-  reason?: string;
-}
-
-export class RentalRequestQueryDto extends PaginationQueryDto {
-  @ApiPropertyOptional({ enum: RequestStatus })
-  @IsOptional()
-  @IsEnum(RequestStatus)
-  status?: RequestStatus;
 }

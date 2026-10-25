@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { NotificationType, Prisma } from '@prisma/client';
-import { paginate } from '../common/dto/pagination.dto';
+import { Page, pageArgs } from '../common/http/page';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationQueryDto } from './dto/notification-query.dto';
 
@@ -13,68 +13,72 @@ export interface NotificationInput {
   data?: Record<string, bigint | number | string>;
 }
 
-/** Works with both `prisma` and a transaction client `tx`. */
-type Db = Pick<PrismaService, 'notification'>;
-
 @Injectable()
 export class NotificationsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(input: NotificationInput, db: Db = this.prisma) {
+  /** Pass `tx` to create the notification inside the caller's transaction. */
+  create(
+    input: NotificationInput,
+    db: Pick<PrismaService, 'notification'> = this.prisma,
+  ) {
     return db.notification.create({
       data: {
         userId: input.userId,
         type: input.type,
         title: input.title.slice(0, 150),
         body: input.body?.slice(0, 500),
-        // bigint isn't valid JSON → store ids as numbers
-        data: input.data
-          ? (JSON.parse(JSON.stringify(input.data)) as Prisma.InputJsonObject)
-          : undefined,
+        data: input.data ? toJson(input.data) : undefined,
       },
     });
   }
 
-  async list(userId: bigint, q: NotificationQueryDto) {
+  async findAll(userId: bigint, query: NotificationQueryDto) {
     const where: Prisma.NotificationWhereInput = {
       userId,
-      ...(q.unreadOnly ? { readAt: null } : {}),
+      readAt: query.unreadOnly ? null : undefined,
     };
     const [items, total] = await Promise.all([
       this.prisma.notification.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        ...paginate(q),
+        ...pageArgs(query),
       }),
       this.prisma.notification.count({ where }),
     ]);
-    return { items, total, page: q.page, limit: q.limit };
+    return Page.of(items, total, query);
   }
 
-  async unreadCount(userId: bigint) {
+  async countUnread(userId: bigint) {
     const count = await this.prisma.notification.count({
       where: { userId, readAt: null },
     });
     return { count };
   }
 
-  async markRead(userId: bigint, id: bigint) {
-    const n = await this.prisma.notification.findFirst({
+  async markAsRead(userId: bigint, id: bigint) {
+    const notification = await this.prisma.notification.findFirst({
       where: { id, userId },
     });
-    if (!n) throw new NotFoundException('Notification not found');
-    if (n.readAt) return n;
+    if (!notification) throw new NotFoundException('Notification not found');
+    if (notification.readAt) return notification;
+
     return this.prisma.notification.update({
       where: { id },
       data: { readAt: new Date() },
     });
   }
 
-  async markAllRead(userId: bigint) {
+  async markAllAsRead(userId: bigint) {
     const { count } = await this.prisma.notification.updateMany({
       where: { userId, readAt: null },
       data: { readAt: new Date() },
     });
     return { updated: count };
   }
+}
+
+/** bigint isn't valid JSON, so ids are stored as numbers. */
+function toJson(data: NotificationInput['data']) {
+  return JSON.parse(JSON.stringify(data)) as Prisma.InputJsonObject;
 }

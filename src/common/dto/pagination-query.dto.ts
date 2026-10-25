@@ -18,14 +18,3 @@ export class PaginationQueryDto {
   @Max(50)
   limit: number = 20;
 }
-
-export interface Paginated<T> {
-  items: T[];
-  total: number;
-  page: number;
-  limit: number;
-}
-
-export function paginate(q: PaginationQueryDto) {
-  return { skip: (q.page - 1) * q.limit, take: q.limit };
-}

@@ -4,36 +4,23 @@ import {
   Delete,
   Get,
   HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
-  Put,
   Query,
-  UploadedFiles,
-  UseInterceptors,
 } from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
-import {
-  ApiBearerAuth,
-  ApiBody,
-  ApiConsumes,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth-user';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
-import { ImageFilesPipe } from '../common/pipes/image-files.pipe';
+import { ResponseMessage } from '../common/http/response-message.decorator';
 import { ParseBigIntPipe } from '../common/pipes/parse-bigint.pipe';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { ListingQueryDto } from './dto/listing-query.dto';
 import { MyListingsQueryDto } from './dto/my-listings-query.dto';
-import { ReorderPhotosDto } from './dto/reorder-photos.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
-import {
-  ListingPhotosService,
-  MAX_PHOTOS_PER_LISTING,
-} from './listing-photos.service';
+import { ListingSearchService } from './listing-search.service';
 import { ListingsService } from './listings.service';
 
 @ApiTags('listings')
@@ -42,33 +29,29 @@ import { ListingsService } from './listings.service';
 export class ListingsController {
   constructor(
     private readonly listings: ListingsService,
-    private readonly photos: ListingPhotosService,
+    private readonly search: ListingSearchService,
   ) {}
 
   // ---------------------------------------------------------------- read
 
   @Public()
   @Get()
-  @ApiOperation({
-    summary: 'Search ACTIVE listings (filters, text, bbox, sort, paging)',
-  })
-  search(@Query() q: ListingQueryDto, @CurrentUser() user?: AuthUser) {
-    return this.listings.search(q, user);
+  @ApiOperation({ summary: 'Search ACTIVE listings (paged)' })
+  findAll(@Query() query: ListingQueryDto, @CurrentUser() user?: AuthUser) {
+    return this.search.search(query, user);
   }
 
   @Public()
   @Get('map')
-  @ApiOperation({
-    summary: 'Lightweight map markers (max 500) for the same filters',
-  })
-  map(@Query() q: ListingQueryDto) {
-    return this.listings.mapPoints(q);
+  @ApiOperation({ summary: 'Map markers for the same filters (max 500)' })
+  findMapPoints(@Query() query: ListingQueryDto) {
+    return this.search.mapPoints(query);
   }
 
   @Get('mine')
-  @ApiOperation({ summary: 'My listings in any status' })
-  mine(@CurrentUser() user: AuthUser, @Query() q: MyListingsQueryDto) {
-    return this.listings.mine(user.id, q);
+  @ApiOperation({ summary: 'My listings in any status (paged)' })
+  findMine(@CurrentUser() user: AuthUser, @Query() query: MyListingsQueryDto) {
+    return this.listings.findMine(user.id, query);
   }
 
   @Public()
@@ -83,11 +66,13 @@ export class ListingsController {
   // ---------------------------------------------------------------- write
 
   @Post()
+  @ResponseMessage('Listing created')
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateListingDto) {
     return this.listings.create(user.id, dto);
   }
 
   @Patch(':id')
+  @ResponseMessage('Listing updated')
   update(
     @Param('id', ParseBigIntPipe) id: bigint,
     @CurrentUser() user: AuthUser,
@@ -97,7 +82,8 @@ export class ListingsController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete listing (owner or ADMIN)' })
+  @ApiOperation({ summary: 'Owner or ADMIN' })
+  @ResponseMessage('Listing deleted')
   remove(
     @Param('id', ParseBigIntPipe) id: bigint,
     @CurrentUser() user: AuthUser,
@@ -108,84 +94,46 @@ export class ListingsController {
   // ---------------------------------------------------------------- status
 
   @Post(':id/publish')
-  @HttpCode(200)
-  @ApiOperation({ summary: 'DRAFT/INACTIVE/RENTED → ACTIVE' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'DRAFT / INACTIVE / RENTED → ACTIVE' })
+  @ResponseMessage('Listing published')
   publish(
     @Param('id', ParseBigIntPipe) id: bigint,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.listings.changeStatus(id, user, 'publish');
+    return this.listings.publish(id, user);
   }
 
   @Post(':id/deactivate')
-  @HttpCode(200)
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'ACTIVE → INACTIVE (owner or ADMIN)' })
+  @ResponseMessage('Listing deactivated')
   deactivate(
     @Param('id', ParseBigIntPipe) id: bigint,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.listings.changeStatus(id, user, 'deactivate');
+    return this.listings.deactivate(id, user);
   }
 
   @Post(':id/mark-rented')
-  @HttpCode(200)
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'RENT listing → RENTED' })
-  markRented(
+  @ResponseMessage('Listing marked as rented')
+  markAsRented(
     @Param('id', ParseBigIntPipe) id: bigint,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.listings.changeStatus(id, user, 'markRented');
+    return this.listings.markAsRented(id, user);
   }
 
   @Post(':id/mark-sold')
-  @HttpCode(200)
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'SALE listing → SOLD' })
-  markSold(
+  @ResponseMessage('Listing marked as sold')
+  markAsSold(
     @Param('id', ParseBigIntPipe) id: bigint,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.listings.changeStatus(id, user, 'markSold');
-  }
-
-  // ---------------------------------------------------------------- photos
-
-  @Post(':id/photos')
-  @ApiOperation({
-    summary: `Upload photos (field "files", up to ${MAX_PHOTOS_PER_LISTING} total)`,
-  })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        files: { type: 'array', items: { type: 'string', format: 'binary' } },
-      },
-    },
-  })
-  @UseInterceptors(FilesInterceptor('files', MAX_PHOTOS_PER_LISTING))
-  addPhotos(
-    @Param('id', ParseBigIntPipe) id: bigint,
-    @CurrentUser() user: AuthUser,
-    @UploadedFiles(ImageFilesPipe) files: Express.Multer.File[],
-  ) {
-    return this.photos.add(id, user, files);
-  }
-
-  @Put(':id/photos/order')
-  reorderPhotos(
-    @Param('id', ParseBigIntPipe) id: bigint,
-    @CurrentUser() user: AuthUser,
-    @Body() dto: ReorderPhotosDto,
-  ) {
-    return this.photos.reorder(id, user, dto.photoIds);
-  }
-
-  @Delete(':id/photos/:photoId')
-  removePhoto(
-    @Param('id', ParseBigIntPipe) id: bigint,
-    @Param('photoId', ParseBigIntPipe) photoId: bigint,
-    @CurrentUser() user: AuthUser,
-  ) {
-    return this.photos.remove(id, photoId, user);
+    return this.listings.markAsSold(id, user);
   }
 }

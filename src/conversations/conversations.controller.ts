@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpStatus,
   Param,
   Post,
   Query,
@@ -10,13 +11,12 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '../common/auth-user';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { ResponseMessage } from '../common/http/response-message.decorator';
 import { ParseBigIntPipe } from '../common/pipes/parse-bigint.pipe';
 import { ConversationsService } from './conversations.service';
-import {
-  MessagesQueryDto,
-  SendMessageDto,
-  StartConversationDto,
-} from './dto/conversation.dto';
+import { MessagesQueryDto } from './dto/messages-query.dto';
+import { SendMessageDto } from './dto/send-message.dto';
+import { StartConversationDto } from './dto/start-conversation.dto';
 
 @ApiTags('conversations')
 @ApiBearerAuth()
@@ -25,46 +25,52 @@ export class ConversationsController {
   constructor(private readonly conversations: ConversationsService) {}
 
   @Post()
-  @HttpCode(200)
-  @ApiOperation({ summary: 'Open (or get existing) chat with a listing owner' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Open (or get the existing) chat with a listing owner',
+  })
   start(@CurrentUser() user: AuthUser, @Body() dto: StartConversationDto) {
-    return this.conversations.start(user, BigInt(dto.listingId));
+    return this.conversations.start(user, dto);
   }
 
   @Get()
-  list(@CurrentUser() user: AuthUser) {
-    return this.conversations.list(user);
+  findAll(@CurrentUser() user: AuthUser) {
+    return this.conversations.findAll(user);
   }
 
   @Get(':id')
-  get(@CurrentUser() user: AuthUser, @Param('id', ParseBigIntPipe) id: bigint) {
-    return this.conversations.get(user, id);
+  findOne(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseBigIntPipe) id: bigint,
+  ) {
+    return this.conversations.findOne(user, id);
   }
 
   @Get(':id/messages')
-  messages(
+  findMessages(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseBigIntPipe) id: bigint,
-    @Query() q: MessagesQueryDto,
+    @Query() query: MessagesQueryDto,
   ) {
-    return this.conversations.messages(user, id, q);
+    return this.conversations.findMessages(user, id, query);
   }
 
   @Post(':id/messages')
-  send(
+  @ResponseMessage('Message sent')
+  sendMessage(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseBigIntPipe) id: bigint,
     @Body() dto: SendMessageDto,
   ) {
-    return this.conversations.send(user, id, dto.body);
+    return this.conversations.sendMessage(user, id, dto.body);
   }
 
   @Post(':id/read')
-  @HttpCode(200)
-  markRead(
+  @HttpCode(HttpStatus.OK)
+  markAsRead(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseBigIntPipe) id: bigint,
   ) {
-    return this.conversations.markRead(user, id);
+    return this.conversations.markAsRead(user, id);
   }
 }

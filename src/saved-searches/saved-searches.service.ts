@@ -2,24 +2,22 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { instanceToPlain } from 'class-transformer';
 import { AuthUser } from '../common/auth-user';
-import { PaginationQueryDto } from '../common/dto/pagination.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { SearchFiltersDto } from '../listings/dto/search-filters.dto';
-import { ListingsService } from '../listings/listings.service';
+import { ListingSearchService } from '../listings/listing-search.service';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  CreateSavedSearchDto,
-  UpdateSavedSearchDto,
-} from './dto/saved-search.dto';
+import { CreateSavedSearchDto } from './dto/create-saved-search.dto';
+import { UpdateSavedSearchDto } from './dto/update-saved-search.dto';
 
 /** Use case: Хайлтын шүүлтүүр хадгалах. */
 @Injectable()
 export class SavedSearchesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly listings: ListingsService,
+    private readonly listingSearch: ListingSearchService,
   ) {}
 
-  list(userId: bigint) {
+  findAll(userId: bigint) {
     return this.prisma.savedSearch.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -28,49 +26,48 @@ export class SavedSearchesService {
 
   create(userId: bigint, dto: CreateSavedSearchDto) {
     return this.prisma.savedSearch.create({
-      data: { userId, name: dto.name, filters: this.toJson(dto.filters) },
+      data: { userId, name: dto.name, filters: toJson(dto.filters) },
     });
   }
 
   async update(userId: bigint, id: bigint, dto: UpdateSavedSearchDto) {
-    await this.getOwn(userId, id);
+    await this.findOwn(userId, id);
     return this.prisma.savedSearch.update({
       where: { id },
       data: {
         name: dto.name,
-        filters: dto.filters ? this.toJson(dto.filters) : undefined,
+        filters: dto.filters ? toJson(dto.filters) : undefined,
       },
     });
   }
 
-  async remove(userId: bigint, id: bigint) {
-    await this.getOwn(userId, id);
+  async remove(userId: bigint, id: bigint): Promise<void> {
+    await this.findOwn(userId, id);
     await this.prisma.savedSearch.delete({ where: { id } });
-    return { ok: true };
   }
 
-  /** apply(): runs the saved filters as a listing search. */
-  async results(user: AuthUser, id: bigint, q: PaginationQueryDto) {
-    const saved = await this.getOwn(user.id, id);
+  /** Runs the saved filters as a normal listing search. */
+  async findListings(user: AuthUser, id: bigint, query: PaginationQueryDto) {
+    const saved = await this.findOwn(user.id, id);
     const filters = saved.filters as SearchFiltersDto;
-    return this.listings.search(
-      { ...filters, page: q.page, limit: q.limit, sort: 'newest' },
+    return this.listingSearch.search(
+      { ...filters, page: query.page, limit: query.limit, sort: 'newest' },
       user,
     );
   }
 
-  private async getOwn(userId: bigint, id: bigint) {
+  private async findOwn(userId: bigint, id: bigint) {
     const saved = await this.prisma.savedSearch.findFirst({
       where: { id, userId },
     });
     if (!saved) throw new NotFoundException('Saved search not found');
     return saved;
   }
+}
 
-  /** Drop undefined keys so the stored jsonb stays clean. */
-  private toJson(filters: SearchFiltersDto): Prisma.InputJsonObject {
-    return JSON.parse(
-      JSON.stringify(instanceToPlain(filters)),
-    ) as Prisma.InputJsonObject;
-  }
+/** DTO → plain JSON without undefined keys, so the stored jsonb stays clean. */
+function toJson(filters: SearchFiltersDto) {
+  return JSON.parse(
+    JSON.stringify(instanceToPlain(filters)),
+  ) as Prisma.InputJsonObject;
 }

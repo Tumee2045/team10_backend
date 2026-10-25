@@ -8,7 +8,7 @@ import { RolesGuard } from './common/guards/roles.guard';
 import { validateEnv } from './config/env.validation';
 import { ConversationsModule } from './conversations/conversations.module';
 import { FavoritesModule } from './favorites/favorites.module';
-import { HealthController } from './health.controller';
+import { HealthModule } from './health/health.module';
 import { ListingsModule } from './listings/listings.module';
 import { LookupsModule } from './lookups/lookups.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -33,8 +33,8 @@ import { UsersModule } from './users/users.module';
     ConversationsModule,
     ReviewsModule,
     NotificationsModule,
+    HealthModule,
   ],
-  controllers: [HealthController],
   providers: [
     // Order matters: authenticate first, then check roles.
     { provide: APP_GUARD, useClass: JwtAuthGuard },

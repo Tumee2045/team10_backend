@@ -1,14 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { ListingStatus, ListingType } from '@prisma/client';
-import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ListingsService } from './listings.service';
+import { ListingSearchService } from './listing-search.service';
 
-describe('ListingsService.buildWhere', () => {
-  const service = new ListingsService(
-    {} as PrismaService,
-    {} as CloudinaryService,
-  );
+describe('ListingSearchService.buildWhere', () => {
+  const service = new ListingSearchService({} as PrismaService);
 
   it('only searches ACTIVE listings', () => {
     expect(service.buildWhere({}).status).toBe(ListingStatus.ACTIVE);
@@ -20,8 +16,12 @@ describe('ListingsService.buildWhere', () => {
       minPrice: 100,
       maxPrice: 200,
     });
-    expect(where.monthlyRent).toEqual({ gte: 100n, lte: 200n });
-    expect(where.salePrice).toBeUndefined();
+    expect(where.AND).toEqual([
+      {
+        listingType: ListingType.RENT,
+        monthlyRent: { gte: 100n, lte: 200n },
+      },
+    ]);
   });
 
   it('applies the price range to both types when listingType is omitted', () => {

@@ -23,17 +23,17 @@ Seeded admin: `admin@example.com` / `Admin12345`. You can change these with `SEE
 
 ## Scripts
 
-| Script | What it does |
-|---|---|
-| `npm run start:dev` | Run with hot reload |
-| `npm run build` / `start:prod` | Compile to `dist/` and run |
-| `npm run db:migrate` | Apply pending migrations (`prisma migrate deploy`) |
-| `npm run db:migrate:dev -- --name x` | After editing `schema.prisma`: create a new migration |
-| `npm run db:seed` | Upsert lookup data and the admin account. Safe to re-run. |
-| `npm run db:reset` | **Drops everything**, re-migrates and re-seeds |
-| `npm run db:studio` | Prisma Studio (DB browser) |
-| `npm test` / `npm run test:e2e` | Unit tests / e2e tests (e2e needs a seeded DB) |
-| `npm run lint` | ESLint + Prettier |
+| Script                               | What it does                                              |
+| ------------------------------------ | --------------------------------------------------------- |
+| `npm run start:dev`                  | Run with hot reload                                       |
+| `npm run build` / `start:prod`       | Compile to `dist/` and run                                |
+| `npm run db:migrate`                 | Apply pending migrations (`prisma migrate deploy`)        |
+| `npm run db:migrate:dev -- --name x` | After editing `schema.prisma`: create a new migration     |
+| `npm run db:seed`                    | Upsert lookup data and the admin account. Safe to re-run. |
+| `npm run db:reset`                   | **Drops everything**, re-migrates and re-seeds            |
+| `npm run db:studio`                  | Prisma Studio (DB browser)                                |
+| `npm test` / `npm run test:e2e`      | Unit tests / e2e tests (e2e needs a seeded DB)            |
+| `npm run lint`                       | ESLint + Prettier                                         |
 
 ## Structure
 
@@ -57,23 +57,24 @@ Each feature folder has `*.controller.ts` (HTTP), `*.service.ts` (business rules
 
 Every path starts with `/api`. 🔓 = works without a token.
 
-| Area | Endpoints |
-|---|---|
-| Auth | 🔓 `POST /auth/register`, 🔓 `POST /auth/login` → `{ accessToken, user }` |
-| Users | `GET/PATCH /users/me`, `PATCH /users/me/password`, `POST /users/me/avatar`, 🔓 `GET /users/:id`, 🔓 `GET /users/:id/reviews` |
-| Lookups | 🔓 `GET /districts`, 🔓 `GET /amenities` |
-| Listings | 🔓 `GET /listings` (search), 🔓 `GET /listings/map`, 🔓 `GET /listings/:id`, `GET /listings/mine`, `POST /listings`, `PATCH /listings/:id`, `DELETE /listings/:id` |
-| Listing status | `POST /listings/:id/publish`, `/deactivate`, `/mark-rented`, `/mark-sold` |
-| Photos | `POST /listings/:id/photos` (multipart `files`), `PUT /listings/:id/photos/order`, `DELETE /listings/:id/photos/:photoId` |
-| Favorites | `GET /favorites`, `PUT /favorites/:listingId`, `DELETE /favorites/:listingId` |
-| Saved searches | `GET/POST /saved-searches`, `PATCH/DELETE /saved-searches/:id`, `GET /saved-searches/:id/listings` |
-| Rental requests | `POST /rental-requests`, `GET /rental-requests/sent`, `GET /rental-requests/received`, `GET /rental-requests/:id`, `POST …/:id/approve`, `…/reject`, `…/cancel` |
-| Chat | `POST /conversations` (open with listing owner), `GET /conversations`, `GET /conversations/:id`, `GET/POST /conversations/:id/messages`, `POST /conversations/:id/read` |
-| Reviews | `POST /reviews`, `PATCH /reviews/:id` |
-| Notifications | `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/:id/read`, `POST /notifications/read-all` |
-| Health | 🔓 `GET /health` |
+| Area            | Endpoints                                                                                                                                                               |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth            | 🔓 `POST /auth/register`, 🔓 `POST /auth/login` → `{ accessToken, user }`                                                                                               |
+| Users           | `GET/PATCH /users/me`, `PATCH /users/me/password`, `POST /users/me/avatar`, 🔓 `GET /users/:id`, 🔓 `GET /users/:id/reviews`                                            |
+| Lookups         | 🔓 `GET /districts`, 🔓 `GET /amenities`                                                                                                                                |
+| Listings        | 🔓 `GET /listings` (search), 🔓 `GET /listings/map`, 🔓 `GET /listings/:id`, `GET /listings/mine`, `POST /listings`, `PATCH /listings/:id`, `DELETE /listings/:id`      |
+| Listing status  | `POST /listings/:id/publish`, `/deactivate`, `/mark-rented`, `/mark-sold`                                                                                               |
+| Photos          | `POST /listings/:id/photos` (multipart `files`), `PUT /listings/:id/photos/order`, `DELETE /listings/:id/photos/:photoId`                                               |
+| Favorites       | `GET /favorites`, `PUT /favorites/:listingId`, `DELETE /favorites/:listingId`                                                                                           |
+| Saved searches  | `GET/POST /saved-searches`, `PATCH/DELETE /saved-searches/:id`, `GET /saved-searches/:id/listings`                                                                      |
+| Rental requests | `POST /rental-requests`, `GET /rental-requests/sent`, `GET /rental-requests/received`, `GET /rental-requests/:id`, `POST …/:id/approve`, `…/reject`, `…/cancel`         |
+| Chat            | `POST /conversations` (open with listing owner), `GET /conversations`, `GET /conversations/:id`, `GET/POST /conversations/:id/messages`, `POST /conversations/:id/read` |
+| Reviews         | `POST /reviews`, `PATCH /reviews/:id`                                                                                                                                   |
+| Notifications   | `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/:id/read`, `POST /notifications/read-all`                                                 |
+| Health          | 🔓 `GET /health`                                                                                                                                                        |
 
 ### Search query params (`GET /listings`, `/listings/map`)
+
 `listingType`, `propertyType`, `districtIds=1,2`, `minPrice`, `maxPrice`, `rooms` (minimum),
 `amenityIds=1,3` (listing must have all of them), `minArea`, `maxArea`, `q` (text search),
 `minLat,maxLat,minLng,maxLng` (map box, send all four or none), `sort=newest|price_asc|price_desc|popular`, `page`, `limit` (max 50).
@@ -94,6 +95,28 @@ Every path starts with `/api`. 🔓 = works without a token.
 
 - Auth header: `Authorization: Bearer <token>`. Tokens last `JWT_EXPIRES_IN` (default 7d).
 - IDs and MNT amounts are `bigint` in the DB but come back as plain JSON numbers. Decimals (area, coordinates) are numbers too.
-- Paged lists return `{ items, total, page, limit }`.
-- Errors use Nest's default shape: `{ statusCode, message, error }`. Validation errors list each problem in `message[]`.
 - Unknown fields in the body or query → **400** (`forbidNonWhitelisted`).
+
+### Response format
+
+Every response, success or error, has the same top-level shape:
+
+```jsonc
+// success
+{ "success": true,  "statusCode": 200, "message": "Listing created", "data": { ... } }
+// paged list: data is the array, meta has the paging info
+{ "success": true,  "statusCode": 200, "message": "Success", "data": [ ... ],
+  "meta": { "total": 42, "page": 1, "limit": 20, "totalPages": 3 } }
+// error
+{ "success": false, "statusCode": 409, "error": "CONFLICT",
+  "message": "You already have a pending request for this listing", "path": "...", "timestamp": "..." }
+// validation error
+{ "success": false, "statusCode": 400, "error": "VALIDATION_ERROR", "message": "Validation failed",
+  "errors": [{ "field": "email", "message": "email must be an email" }], "path": "...", "timestamp": "..." }
+```
+
+`error` is one of: `BAD_REQUEST`, `VALIDATION_ERROR`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`,
+`PAYLOAD_TOO_LARGE`, `SERVICE_UNAVAILABLE`, `INTERNAL_ERROR`.
+Chat history (`GET /conversations/:id/messages`) loads older pages by message id instead, so its `data` is `{ items, hasMore }`.
+
+The code standard is in [CONTRIBUTING.md](CONTRIBUTING.md).

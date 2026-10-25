@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsOptional } from 'class-validator';
-import { PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { ToBoolean } from '../../common/dto/query-transforms';
 
 export class NotificationQueryDto extends PaginationQueryDto {

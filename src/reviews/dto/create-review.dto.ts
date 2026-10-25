@@ -1,9 +1,4 @@
-import {
-  ApiProperty,
-  ApiPropertyOptional,
-  OmitType,
-  PartialType,
-} from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsInt,
   IsOptional,
@@ -16,7 +11,7 @@ import {
 export class CreateReviewDto {
   @ApiProperty({
     example: 1,
-    description: 'Must be an APPROVED rental request you are part of',
+    description: 'An APPROVED rental request you are part of',
   })
   @IsInt()
   @Min(1)
@@ -34,7 +29,3 @@ export class CreateReviewDto {
   @MaxLength(1000)
   comment?: string;
 }
-
-export class UpdateReviewDto extends PartialType(
-  OmitType(CreateReviewDto, ['rentalRequestId'] as const),
-) {}

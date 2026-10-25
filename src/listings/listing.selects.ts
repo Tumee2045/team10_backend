@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
+import { coverPhotoSelect, userContactSelect } from '../prisma/selects';
 
-/** Fields for list/search results ("cards"). */
+/** Fields for search results and lists ("cards"). Map with `withCoverUrl`. */
 export const listingCardSelect = {
   id: true,
   ownerId: true,
@@ -21,22 +22,23 @@ export const listingCardSelect = {
   publishedAt: true,
   createdAt: true,
   district: { select: { id: true, name: true } },
-  photos: {
-    select: { url: true },
-    orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-    take: 1,
-  },
+  photos: coverPhotoSelect,
 } satisfies Prisma.ListingSelect;
 
-type ListingCardRow = Prisma.ListingGetPayload<{
-  select: typeof listingCardSelect;
-}>;
+/** Lightweight map markers. Map with `withCoverUrl`. */
+export const listingMapPointSelect = {
+  id: true,
+  title: true,
+  listingType: true,
+  propertyType: true,
+  monthlyRent: true,
+  salePrice: true,
+  latitude: true,
+  longitude: true,
+  photos: coverPhotoSelect,
+} satisfies Prisma.ListingSelect;
 
-export function toListingCard({ photos, ...rest }: ListingCardRow) {
-  return { ...rest, coverUrl: photos[0]?.url ?? null };
-}
-
-/** Everything for the listing detail page. */
+/** Everything for the listing detail page. Map with `toListingDetail`. */
 export const listingDetailInclude = {
   district: true,
   photos: {
@@ -44,21 +46,14 @@ export const listingDetailInclude = {
     orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
   },
   amenities: { select: { amenity: true } },
-  owner: {
-    select: {
-      id: true,
-      fullName: true,
-      avatarUrl: true,
-      phone: true,
-      createdAt: true,
-    },
-  },
+  owner: { select: { ...userContactSelect, createdAt: true } },
 } satisfies Prisma.ListingInclude;
 
 type ListingDetailRow = Prisma.ListingGetPayload<{
   include: typeof listingDetailInclude;
 }>;
 
+/** Flattens `amenities: [{ amenity }]` → `amenities: [amenity]`. */
 export function toListingDetail({ amenities, ...rest }: ListingDetailRow) {
   return { ...rest, amenities: amenities.map((a) => a.amenity) };
 }

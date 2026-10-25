@@ -10,8 +10,7 @@ import { ListingsService } from './listings.service';
 
 export const MAX_PHOTOS_PER_LISTING = 20;
 
-const photoSelect = { id: true, url: true, sortOrder: true } as const;
-
+/** Listing photos stored in Cloudinary. `sortOrder` 0 is the cover. Every method returns the full, ordered photo list. */
 @Injectable()
 export class ListingPhotosService {
   constructor(
@@ -20,77 +19,87 @@ export class ListingPhotosService {
     private readonly listings: ListingsService,
   ) {}
 
-  list(listingId: bigint) {
-    return this.prisma.listingPhoto.findMany({
-      where: { listingId },
-      select: photoSelect,
-      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-    });
-  }
-
-  /** Uploads to Cloudinary, appends after existing photos (sort_order 0 = cover). */
   async add(listingId: bigint, user: AuthUser, files: Express.Multer.File[]) {
-    await this.listings.getForOwner(listingId, user);
-    const agg = await this.prisma.listingPhoto.aggregate({
+    await this.listings.findOwned(listingId, user);
+
+    const existing = await this.prisma.listingPhoto.aggregate({
       where: { listingId },
       _count: true,
       _max: { sortOrder: true },
     });
-    if (agg._count + files.length > MAX_PHOTOS_PER_LISTING) {
+    if (existing._count + files.length > MAX_PHOTOS_PER_LISTING) {
       throw new BadRequestException(
         `A listing can have at most ${MAX_PHOTOS_PER_LISTING} photos`,
       );
     }
 
     const uploaded = await Promise.all(
-      files.map((f) => this.cloudinary.upload(f, `listings/${listingId}`)),
+      files.map((file) =>
+        this.cloudinary.upload(file, `listings/${listingId}`),
+      ),
     );
-    const start = agg._count ? (agg._max.sortOrder ?? 0) + 1 : 0;
+    const nextSortOrder = existing._count
+      ? (existing._max.sortOrder ?? 0) + 1
+      : 0;
     await this.prisma.listingPhoto.createMany({
-      data: uploaded.map((img, i) => ({
+      data: uploaded.map((image, i) => ({
         listingId,
-        url: img.url,
-        cloudinaryPublicId: img.publicId,
-        sortOrder: start + i,
+        url: image.url,
+        cloudinaryPublicId: image.publicId,
+        sortOrder: nextSortOrder + i,
       })),
     });
     return this.list(listingId);
   }
 
   async remove(listingId: bigint, photoId: bigint, user: AuthUser) {
-    await this.listings.getForOwner(listingId, user);
+    await this.listings.findOwned(listingId, user);
     const photo = await this.prisma.listingPhoto.findFirst({
       where: { id: photoId, listingId },
     });
     if (!photo) throw new NotFoundException('Photo not found');
+
     await this.prisma.listingPhoto.delete({ where: { id: photoId } });
     await this.cloudinary.remove([photo.cloudinaryPublicId]);
     return this.list(listingId);
   }
 
-  /** `photoIds` must be exactly the listing's photos, in the new order. */
+  /** `photoIds` must contain every photo of the listing exactly once, in the new order. */
   async reorder(listingId: bigint, user: AuthUser, photoIds: number[]) {
-    await this.listings.getForOwner(listingId, user);
-    const existing = await this.prisma.listingPhoto.findMany({
-      where: { listingId },
-      select: { id: true },
-    });
+    await this.listings.findOwned(listingId, user);
     const ids = photoIds.map((id) => BigInt(id));
-    const known = new Set(existing.map((p) => p.id));
-    if (
-      ids.length !== existing.length ||
-      new Set(ids).size !== ids.length ||
-      ids.some((id) => !known.has(id))
-    ) {
-      throw new BadRequestException(
-        'photoIds must list every photo of this listing exactly once',
-      );
-    }
+    await this.assertSamePhotos(listingId, ids);
+
     await this.prisma.$transaction(
       ids.map((id, sortOrder) =>
         this.prisma.listingPhoto.update({ where: { id }, data: { sortOrder } }),
       ),
     );
     return this.list(listingId);
+  }
+
+  private list(listingId: bigint) {
+    return this.prisma.listingPhoto.findMany({
+      where: { listingId },
+      select: { id: true, url: true, sortOrder: true },
+      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  private async assertSamePhotos(listingId: bigint, ids: bigint[]) {
+    const existing = await this.prisma.listingPhoto.findMany({
+      where: { listingId },
+      select: { id: true },
+    });
+    const existingIds = new Set(existing.map((p) => p.id));
+    const isSameSet =
+      ids.length === existingIds.size &&
+      new Set(ids).size === ids.length &&
+      ids.every((id) => existingIds.has(id));
+    if (!isSameSet) {
+      throw new BadRequestException(
+        'photoIds must list every photo of this listing exactly once',
+      );
+    }
   }
 }

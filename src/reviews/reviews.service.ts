@@ -7,16 +7,17 @@ import {
 } from '@nestjs/common';
 import { NotificationType, RequestStatus } from '@prisma/client';
 import { AuthUser } from '../common/auth-user';
-import { PaginationQueryDto, paginate } from '../common/dto/pagination.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { Page, pageArgs } from '../common/http/page';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateReviewDto, UpdateReviewDto } from './dto/review.dto';
+import { userBriefSelect } from '../prisma/selects';
+import { CreateReviewDto } from './dto/create-review.dto';
+import { UpdateReviewDto } from './dto/update-review.dto';
 
-const authorBrief = {
-  select: { id: true, fullName: true, avatarUrl: true },
-} as const;
+const withAuthor = { author: { select: userBriefSelect } };
 
-/** Use case: Үнэлгээ, сэтгэгдэл үлдээх. Renter ↔ owner rate each other after an APPROVED request. */
+/** Use case: Үнэлгээ, сэтгэгдэл үлдээх. Renter and owner rate each other after an APPROVED request. */
 @Injectable()
 export class ReviewsService {
   constructor(
@@ -25,39 +26,20 @@ export class ReviewsService {
   ) {}
 
   async create(user: AuthUser, dto: CreateReviewDto) {
-    const requestId = BigInt(dto.rentalRequestId);
-    const request = await this.prisma.rentalRequest.findUnique({
-      where: { id: requestId },
-      include: {
-        listing: { select: { id: true, title: true, ownerId: true } },
-      },
-    });
-    const ownerId = request?.listing.ownerId;
-    if (!request || (request.renterId !== user.id && ownerId !== user.id)) {
-      throw new NotFoundException('Rental request not found');
-    }
-    if (request.status !== RequestStatus.APPROVED) {
-      throw new BadRequestException('You can only review an approved rental');
-    }
-    const targetUserId =
-      request.renterId === user.id ? ownerId! : request.renterId;
-
-    const already = await this.prisma.review.count({
-      where: { rentalRequestId: requestId, authorId: user.id },
-    });
-    if (already)
-      throw new ConflictException('You already reviewed this rental');
+    const rentalRequestId = BigInt(dto.rentalRequestId);
+    const targetUserId = await this.findOtherParty(rentalRequestId, user);
+    await this.assertNotReviewedYet(rentalRequestId, user.id);
 
     return this.prisma.$transaction(async (tx) => {
       const review = await tx.review.create({
         data: {
-          rentalRequestId: requestId,
+          rentalRequestId,
           authorId: user.id,
           targetUserId,
           rating: dto.rating,
           comment: dto.comment,
         },
-        include: { author: authorBrief },
+        include: withAuthor,
       });
       await this.notifications.create(
         {
@@ -65,11 +47,7 @@ export class ReviewsService {
           type: NotificationType.NEW_REVIEW,
           title: 'Шинэ үнэлгээ',
           body: `${review.author.fullName} танд ${dto.rating}★ үнэлгээ өглөө.`,
-          data: {
-            reviewId: review.id,
-            requestId,
-            listingId: request.listing.id,
-          },
+          data: { reviewId: review.id, requestId: rentalRequestId },
         },
         tx,
       );
@@ -86,31 +64,68 @@ export class ReviewsService {
     return this.prisma.review.update({
       where: { id },
       data: dto,
-      include: { author: authorBrief },
+      include: withAuthor,
     });
   }
 
   /** Reviews a user received, newest first. */
-  async forUser(userId: bigint, q: PaginationQueryDto) {
+  async findForUser(userId: bigint, query: PaginationQueryDto) {
     const where = { targetUserId: userId };
-    const [items, total, agg] = await Promise.all([
+    const [items, total] = await Promise.all([
       this.prisma.review.findMany({
         where,
-        include: { author: authorBrief },
+        include: withAuthor,
         orderBy: { createdAt: 'desc' },
-        ...paginate(q),
+        ...pageArgs(query),
       }),
       this.prisma.review.count({ where }),
-      this.prisma.review.aggregate({ where, _avg: { rating: true } }),
     ]);
+    return Page.of(items, total, query);
+  }
+
+  /** `{ average: 4.5, count: 12 }`, average rounded to 1 decimal. Used on profiles. */
+  async ratingSummary(userId: bigint) {
+    const result = await this.prisma.review.aggregate({
+      where: { targetUserId: userId },
+      _avg: { rating: true },
+      _count: true,
+    });
+    const average = result._avg.rating;
     return {
-      items,
-      total,
-      page: q.page,
-      limit: q.limit,
-      averageRating: agg._avg.rating
-        ? Math.round(agg._avg.rating * 10) / 10
-        : null,
+      average: average === null ? null : Math.round(average * 10) / 10,
+      count: result._count,
     };
+  }
+
+  // ---------------------------------------------------------------- private
+
+  /** The user must be the renter or the owner of an APPROVED request. Returns the other one. */
+  private async findOtherParty(rentalRequestId: bigint, user: AuthUser) {
+    const request = await this.prisma.rentalRequest.findUnique({
+      where: { id: rentalRequestId },
+      include: { listing: { select: { ownerId: true } } },
+    });
+    if (!request) throw new NotFoundException('Rental request not found');
+
+    const { renterId } = request;
+    const { ownerId } = request.listing;
+    if (user.id !== renterId && user.id !== ownerId) {
+      throw new NotFoundException('Rental request not found');
+    }
+    if (request.status !== RequestStatus.APPROVED) {
+      throw new BadRequestException('You can only review an approved rental');
+    }
+    return user.id === renterId ? ownerId : renterId;
+  }
+
+  private async assertNotReviewedYet(
+    rentalRequestId: bigint,
+    authorId: bigint,
+  ) {
+    const existing = await this.prisma.review.count({
+      where: { rentalRequestId, authorId },
+    });
+    if (existing)
+      throw new ConflictException('You already reviewed this rental');
   }
 }
