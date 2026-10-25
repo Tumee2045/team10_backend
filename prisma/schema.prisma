@@ -1,0 +1,324 @@
+// Mirrors docs/erd.dbml. Table/column names stay snake_case via @@map/@map.
+// Constraints Prisma can't express (CHECKs, partial unique index) live in
+// prisma/migrations/*_init/migration.sql — see the "Custom constraints" block there.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===================================================================== ENUMS
+
+enum UserRole {
+  USER
+  ADMIN
+
+  @@map("user_role")
+}
+
+enum ListingType {
+  RENT
+  SALE
+
+  @@map("listing_type")
+}
+
+enum PropertyType {
+  APARTMENT
+  HOUSE
+  GER
+  OFFICE
+  COMMERCIAL
+  GARAGE
+  LAND
+
+  @@map("property_type")
+}
+
+enum ListingStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  RENTED
+  SOLD
+
+  @@map("listing_status")
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+
+  @@map("request_status")
+}
+
+enum NotificationType {
+  NEW_RENTAL_REQUEST
+  RENTAL_REQUEST_APPROVED
+  RENTAL_REQUEST_REJECTED
+  NEW_MESSAGE
+  NEW_REVIEW
+
+  @@map("notification_type")
+}
+
+// ===================================================================== USERS
+
+model User {
+  id           BigInt   @id @default(autoincrement())
+  email        String   @unique @db.VarChar(255)
+  phone        String?  @db.VarChar(20)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  fullName     String   @map("full_name") @db.VarChar(100)
+  avatarUrl    String?  @map("avatar_url")
+  bio          String?  @db.VarChar(500)
+  role         UserRole @default(USER)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  listings            Listing[]
+  favorites           Favorite[]
+  savedSearches       SavedSearch[]
+  rentalRequests      RentalRequest[]
+  ownerConversations  Conversation[]  @relation("ConversationOwner")
+  clientConversations Conversation[]  @relation("ConversationClient")
+  messages            Message[]
+  reviewsWritten      Review[]        @relation("ReviewAuthor")
+  reviewsReceived     Review[]        @relation("ReviewTarget")
+  notifications       Notification[]
+
+  @@map("users")
+}
+
+// ===================================================================== LOCATION
+
+model District {
+  id   Int    @id @default(autoincrement())
+  name String @unique @db.VarChar(50)
+
+  listings Listing[]
+
+  @@map("districts")
+}
+
+// ===================================================================== LISTINGS
+
+model Listing {
+  id           BigInt        @id @default(autoincrement())
+  ownerId      BigInt        @map("owner_id")
+  districtId   Int           @map("district_id")
+  listingType  ListingType   @map("listing_type")
+  propertyType PropertyType  @map("property_type")
+  status       ListingStatus @default(DRAFT)
+
+  title       String  @db.VarChar(150)
+  description String?
+
+  // price (MNT)
+  monthlyRent       BigInt?   @map("monthly_rent")
+  deposit           BigInt?
+  minMonths         Int?      @map("min_months") @db.SmallInt
+  utilitiesIncluded Boolean   @default(false) @map("utilities_included")
+  salePrice         BigInt?   @map("sale_price")
+  priceNegotiable   Boolean   @default(false) @map("price_negotiable")
+  availableFrom     DateTime? @map("available_from") @db.Date
+
+  // property details
+  areaM2      Decimal @map("area_m2") @db.Decimal(8, 2)
+  rooms       Int?    @db.SmallInt
+  bathrooms   Int?    @db.SmallInt
+  floor       Int?    @db.SmallInt
+  totalFloors Int?    @map("total_floors") @db.SmallInt
+  yearBuilt   Int?    @map("year_built") @db.SmallInt
+
+  // location
+  khoroo    String? @db.VarChar(50)
+  address   String? @db.VarChar(255)
+  latitude  Decimal @db.Decimal(9, 6)
+  longitude Decimal @db.Decimal(9, 6)
+
+  viewCount   Int       @default(0) @map("view_count")
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  owner          User             @relation(fields: [ownerId], references: [id])
+  district       District         @relation(fields: [districtId], references: [id])
+  photos         ListingPhoto[]
+  amenities      ListingAmenity[]
+  favorites      Favorite[]
+  rentalRequests RentalRequest[]
+  conversations  Conversation[]
+
+  @@index([ownerId])
+  @@index([status, listingType, districtId])
+  @@index([latitude, longitude])
+  @@map("listings")
+}
+
+model ListingPhoto {
+  id                 BigInt   @id @default(autoincrement())
+  listingId          BigInt   @map("listing_id")
+  url                String
+  cloudinaryPublicId String   @map("cloudinary_public_id") @db.VarChar(255)
+  sortOrder          Int      @default(0) @map("sort_order") @db.SmallInt
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId, sortOrder])
+  @@map("listing_photos")
+}
+
+model Amenity {
+  id   Int    @id @default(autoincrement())
+  code String @unique @db.VarChar(50)
+  name String @db.VarChar(100)
+
+  listings ListingAmenity[]
+
+  @@map("amenities")
+}
+
+model ListingAmenity {
+  listingId BigInt @map("listing_id")
+  amenityId Int    @map("amenity_id")
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  amenity Amenity @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([listingId, amenityId])
+  @@map("listing_amenities")
+}
+
+// ===================================================================== USER ACTIVITY
+
+model Favorite {
+  userId    BigInt   @map("user_id")
+  listingId BigInt   @map("listing_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@id([userId, listingId])
+  @@map("favorites")
+}
+
+model SavedSearch {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt   @map("user_id")
+  name      String   @db.VarChar(100)
+  filters   Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("saved_searches")
+}
+
+// ===================================================================== RENTAL REQUESTS
+
+model RentalRequest {
+  id           BigInt        @id @default(autoincrement())
+  listingId    BigInt        @map("listing_id")
+  renterId     BigInt        @map("renter_id")
+  startDate    DateTime      @map("start_date") @db.Date
+  months       Int           @db.SmallInt
+  note         String?       @db.VarChar(1000)
+  status       RequestStatus @default(PENDING)
+  rejectReason String?       @map("reject_reason") @db.VarChar(500)
+  respondedAt  DateTime?     @map("responded_at") @db.Timestamptz(6)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  listing Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  renter  User     @relation(fields: [renterId], references: [id])
+  reviews Review[]
+
+  @@index([listingId, status])
+  @@index([renterId])
+  @@map("rental_requests")
+}
+
+// ===================================================================== CHAT
+
+model Conversation {
+  id               BigInt    @id @default(autoincrement())
+  listingId        BigInt    @map("listing_id")
+  ownerId          BigInt    @map("owner_id")
+  clientId         BigInt    @map("client_id")
+  lastMessageAt    DateTime? @map("last_message_at") @db.Timestamptz(6)
+  ownerLastReadAt  DateTime? @map("owner_last_read_at") @db.Timestamptz(6)
+  clientLastReadAt DateTime? @map("client_last_read_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  listing  Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  owner    User      @relation("ConversationOwner", fields: [ownerId], references: [id])
+  client   User      @relation("ConversationClient", fields: [clientId], references: [id])
+  messages Message[]
+
+  @@unique([listingId, clientId])
+  @@index([ownerId])
+  @@index([clientId])
+  @@map("conversations")
+}
+
+model Message {
+  id             BigInt   @id @default(autoincrement())
+  conversationId BigInt   @map("conversation_id")
+  senderId       BigInt   @map("sender_id")
+  body           String   @db.VarChar(2000)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id])
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+// ===================================================================== REVIEWS
+
+model Review {
+  id              BigInt   @id @default(autoincrement())
+  rentalRequestId BigInt   @map("rental_request_id")
+  authorId        BigInt   @map("author_id")
+  targetUserId    BigInt   @map("target_user_id")
+  rating          Int      @db.SmallInt
+  comment         String?  @db.VarChar(1000)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  rentalRequest RentalRequest @relation(fields: [rentalRequestId], references: [id], onDelete: Cascade)
+  author        User          @relation("ReviewAuthor", fields: [authorId], references: [id])
+  targetUser    User          @relation("ReviewTarget", fields: [targetUserId], references: [id])
+
+  @@unique([rentalRequestId, authorId])
+  @@index([targetUserId])
+  @@map("reviews")
+}
+
+// ===================================================================== NOTIFICATIONS
+
+model Notification {
+  id        BigInt           @id @default(autoincrement())
+  userId    BigInt           @map("user_id")
+  type      NotificationType
+  title     String           @db.VarChar(150)
+  body      String?          @db.VarChar(500)
+  data      Json?
+  readAt    DateTime?        @map("read_at") @db.Timestamptz(6)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}
