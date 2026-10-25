@@ -13,6 +13,8 @@ import {
 import { AuthUser } from '../common/auth-user';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeEvent } from '../realtime/realtime.events';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import {
   coverPhotoSelect,
   userBriefSelect,
@@ -40,6 +42,7 @@ export class ConversationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly realtime: RealtimeGateway,
   ) {}
 
   /** Opens a chat with the listing owner, or returns the existing one. */
@@ -113,34 +116,58 @@ export class ConversationsService {
     const conversation = await this.findParticipating(user, id);
     const isOwner = conversation.ownerId === user.id;
 
-    return this.prisma.$transaction(async (tx) => {
-      const message = await tx.message.create({
-        data: { conversationId: id, senderId: user.id, body },
-      });
-      // Sending a message also means I've read everything before it.
-      await tx.conversation.update({
-        where: { id },
-        data: {
-          lastMessageAt: message.createdAt,
-          ...(isOwner
-            ? { ownerLastReadAt: message.createdAt }
-            : { clientLastReadAt: message.createdAt }),
-        },
-      });
-      await this.notifyRecipient(tx, conversation, user.id, body);
-      return message;
-    });
+    const [message, notification] = await this.prisma.$transaction(
+      async (tx) => {
+        const message = await tx.message.create({
+          data: { conversationId: id, senderId: user.id, body },
+        });
+        // Sending a message also means I've read everything before it.
+        await tx.conversation.update({
+          where: { id },
+          data: {
+            lastMessageAt: message.createdAt,
+            ...(isOwner
+              ? { ownerLastReadAt: message.createdAt }
+              : { clientLastReadAt: message.createdAt }),
+          },
+        });
+        const notification = await this.notifyRecipient(
+          tx,
+          conversation,
+          user.id,
+          body,
+        );
+        return [message, notification] as const;
+      },
+    );
+
+    // Both sides get the message live (the sender too, for their other tabs).
+    this.realtime.emitToUsers(
+      [conversation.ownerId, conversation.clientId],
+      RealtimeEvent.MESSAGE_NEW,
+      { conversationId: id, message },
+    );
+    if (notification) this.notifications.publish(notification);
+    return message;
   }
 
   async markAsRead(user: AuthUser, id: bigint): Promise<void> {
     const conversation = await this.findParticipating(user, id);
-    const now = new Date();
+    const isOwner = conversation.ownerId === user.id;
+    const readAt = new Date();
     await this.prisma.conversation.update({
       where: { id },
-      data:
-        conversation.ownerId === user.id
-          ? { ownerLastReadAt: now }
-          : { clientLastReadAt: now },
+      data: isOwner
+        ? { ownerLastReadAt: readAt }
+        : { clientLastReadAt: readAt },
+    });
+
+    // Lets the other person show "seen".
+    const otherId = isOwner ? conversation.clientId : conversation.ownerId;
+    this.realtime.emitToUser(otherId, RealtimeEvent.CONVERSATION_READ, {
+      conversationId: id,
+      userId: user.id,
+      readAt,
     });
   }
 
@@ -156,7 +183,10 @@ export class ConversationsService {
     return conversation;
   }
 
-  /** At most one unread NEW_MESSAGE notification per conversation, so a chat doesn't spam. */
+  /**
+   * At most one unread NEW_MESSAGE notification per conversation, so a chat doesn't spam.
+   * Returns the new notification (to publish after commit) or null.
+   */
   private async notifyRecipient(
     tx: Pick<PrismaService, 'notification' | 'user'>,
     conversation: Conversation,
@@ -176,13 +206,13 @@ export class ConversationsService {
         data: { path: ['conversationId'], equals: Number(conversation.id) },
       },
     });
-    if (alreadyNotified) return;
+    if (alreadyNotified) return null;
 
     const sender = await tx.user.findUniqueOrThrow({
       where: { id: senderId },
       select: { fullName: true },
     });
-    await this.notifications.create(
+    return this.notifications.create(
       {
         userId: recipientId,
         type: NotificationType.NEW_MESSAGE,

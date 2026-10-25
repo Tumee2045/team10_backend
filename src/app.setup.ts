@@ -4,6 +4,7 @@ import { Reflector } from '@nestjs/core';
 import { HttpExceptionFilter } from './common/http/http-exception.filter';
 import { ResponseInterceptor } from './common/http/response.interceptor';
 import { toFieldErrors, ValidationException } from './common/http/validation';
+import { SocketIoAdapter } from './realtime/socket-io.adapter';
 
 /** Global app setup shared by main.ts and the e2e tests. */
 export function configureApp(app: INestApplication, corsOrigins: string[]) {
@@ -20,4 +21,5 @@ export function configureApp(app: INestApplication, corsOrigins: string[]) {
   );
   app.useGlobalInterceptors(new ResponseInterceptor(app.get(Reflector)));
   app.useGlobalFilters(new HttpExceptionFilter());
+  app.useWebSocketAdapter(new SocketIoAdapter(app, corsOrigins));
 }

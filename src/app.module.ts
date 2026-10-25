@@ -13,6 +13,7 @@ import { ListingsModule } from './listings/listings.module';
 import { LookupsModule } from './lookups/lookups.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RealtimeModule } from './realtime/realtime.module';
 import { RentalRequestsModule } from './rental-requests/rental-requests.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { SavedSearchesModule } from './saved-searches/saved-searches.module';
@@ -23,6 +24,7 @@ import { UsersModule } from './users/users.module';
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     PrismaModule,
     CloudinaryModule,
+    RealtimeModule,
     AuthModule,
     UsersModule,
     LookupsModule,

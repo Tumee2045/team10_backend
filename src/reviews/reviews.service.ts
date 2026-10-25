@@ -30,29 +30,34 @@ export class ReviewsService {
     const targetUserId = await this.findOtherParty(rentalRequestId, user);
     await this.assertNotReviewedYet(rentalRequestId, user.id);
 
-    return this.prisma.$transaction(async (tx) => {
-      const review = await tx.review.create({
-        data: {
-          rentalRequestId,
-          authorId: user.id,
-          targetUserId,
-          rating: dto.rating,
-          comment: dto.comment,
-        },
-        include: withAuthor,
-      });
-      await this.notifications.create(
-        {
-          userId: targetUserId,
-          type: NotificationType.NEW_REVIEW,
-          title: 'Шинэ үнэлгээ',
-          body: `${review.author.fullName} танд ${dto.rating}★ үнэлгээ өглөө.`,
-          data: { reviewId: review.id, requestId: rentalRequestId },
-        },
-        tx,
-      );
-      return review;
-    });
+    const [review, notification] = await this.prisma.$transaction(
+      async (tx) => {
+        const review = await tx.review.create({
+          data: {
+            rentalRequestId,
+            authorId: user.id,
+            targetUserId,
+            rating: dto.rating,
+            comment: dto.comment,
+          },
+          include: withAuthor,
+        });
+        const notification = await this.notifications.create(
+          {
+            userId: targetUserId,
+            type: NotificationType.NEW_REVIEW,
+            title: 'Шинэ үнэлгээ',
+            body: `${review.author.fullName} танд ${dto.rating}★ үнэлгээ өглөө.`,
+            data: { reviewId: review.id, requestId: rentalRequestId },
+          },
+          tx,
+        );
+        return [review, notification] as const;
+      },
+    );
+
+    this.notifications.publish(notification);
+    return review;
   }
 
   async update(user: AuthUser, id: bigint, dto: UpdateReviewDto) {

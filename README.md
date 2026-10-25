@@ -86,7 +86,8 @@ Every path starts with `/api`. 🔓 = works without a token.
 - **Price:** a RENT listing needs `monthlyRent`, a SALE listing needs `salePrice`. Fields that don't fit the listing type are cleared. The database enforces this too.
 - **Rental request:** only for ACTIVE RENT listings that aren't your own. `months ≥ minMonths`, and the start date can't be in the past.
   Only one PENDING request per (listing, renter) is allowed; a second one returns **409**. Only the owner can approve or reject; only the renter can cancel.
-  Approving does **not** automatically mark the listing RENTED. The owner calls `mark-rented` separately.
+  **Approving** marks the listing RENTED and automatically rejects every other PENDING request on it
+  (reason: "Зар өөр хүнд түрээслэгдсэн"), and those renters are notified. To rent it out again, the owner calls `publish`.
 - **Reviews:** only after an APPROVED request. The renter and owner each review the other once (rating 1–5).
 - **Chat:** one conversation per (listing, interested user). Unread count = the other person's messages after your `*_last_read_at`. A recipient gets at most one unread `NEW_MESSAGE` notification per conversation.
 - **Admin:** can view and delete any listing, and can deactivate any listing.
@@ -96,6 +97,22 @@ Every path starts with `/api`. 🔓 = works without a token.
 - Auth header: `Authorization: Bearer <token>`. Tokens last `JWT_EXPIRES_IN` (default 7d).
 - IDs and MNT amounts are `bigint` in the DB but come back as plain JSON numbers. Decimals (area, coordinates) are numbers too.
 - Unknown fields in the body or query → **400** (`forbidNonWhitelisted`).
+
+### Real-time (WebSocket)
+
+Chat messages and notifications are pushed over socket.io on the same port as the API. Connect with the same JWT:
+
+```js
+import { io } from 'socket.io-client';
+const socket = io('http://localhost:3000', { auth: { token: accessToken } });
+
+socket.on('message:new', ({ conversationId, message }) => {}); // to both participants
+socket.on('conversation:read', ({ conversationId, userId, readAt }) => {}); // "seen", to the other participant
+socket.on('notification:new', (notification) => {}); // to its owner
+```
+
+The socket is receive-only: sending messages and marking them as read still go through REST.
+An invalid or missing token disconnects the socket.
 
 ### Response format
 

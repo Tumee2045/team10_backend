@@ -138,7 +138,9 @@ Query params arrive as strings, so always use the `Query*` decorators for them.
 - Avoid nested ternaries. Use `if`/`return` or a small function.
 - Comments explain **why**, not what. Each service has one line naming its use case (Mongolian is fine).
 - No magic numbers. Use a named constant (`MAX_PHOTOS_PER_LISTING`).
-- Notifications are created **inside the same transaction** as the action: `notifications.create(input, tx)`.
+- Notifications are created **inside the same transaction** as the action (`notifications.create(input, tx)`),
+  then pushed with `notifications.publish(...)` **after** the transaction commits.
+- Real-time events go through `RealtimeGateway.emitToUser(s)` with names from `RealtimeEvent`. The socket only receives; it never writes.
 
 ## 8. Before you commit
 

@@ -1,7 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { NotificationType, Prisma } from '@prisma/client';
+import { Notification, NotificationType, Prisma } from '@prisma/client';
 import { findPage } from '../common/http/page';
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeEvent } from '../realtime/realtime.events';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { NotificationQueryDto } from './dto/notification-query.dto';
 
 export interface NotificationInput {
@@ -15,9 +17,15 @@ export interface NotificationInput {
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeGateway,
+  ) {}
 
-  /** Pass `tx` to create the notification inside the caller's transaction. */
+  /**
+   * Saves a notification. Pass `tx` to save it inside the caller's transaction,
+   * then call `publish()` after the transaction commits.
+   */
   create(
     input: NotificationInput,
     db: Pick<PrismaService, 'notification'> = this.prisma,
@@ -31,6 +39,17 @@ export class NotificationsService {
         data: input.data ? toJson(input.data) : undefined,
       },
     });
+  }
+
+  /** Pushes saved notifications to their owners over the WebSocket. */
+  publish(...notifications: Notification[]) {
+    for (const notification of notifications) {
+      this.realtime.emitToUser(
+        notification.userId,
+        RealtimeEvent.NOTIFICATION_NEW,
+        notification,
+      );
+    }
   }
 
   async findAll(userId: bigint, query: NotificationQueryDto) {

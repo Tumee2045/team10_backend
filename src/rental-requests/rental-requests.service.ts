@@ -16,7 +16,10 @@ import {
 } from '@prisma/client';
 import { AuthUser } from '../common/auth-user';
 import { findPage } from '../common/http/page';
-import { NotificationsService } from '../notifications/notifications.service';
+import {
+  NotificationInput,
+  NotificationsService,
+} from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   listingBriefSelect,
@@ -35,7 +38,8 @@ type RequestRow = Prisma.RentalRequestGetPayload<{
   include: typeof requestInclude;
 }>;
 
-type Answer = typeof RequestStatus.APPROVED | typeof RequestStatus.REJECTED;
+/** Shown to renters whose request was closed because someone else got the place. */
+const TAKEN_REASON = 'Зар өөр хүнд түрээслэгдсэн';
 
 /** Use cases: Түрээсийн хүсэлт илгээх · Хүсэлт зөвшөөрөх / татгалзах. */
 @Injectable()
@@ -58,29 +62,33 @@ export class RentalRequestsService {
     await this.assertNoPendingRequest(listingId, user.id);
 
     // If two requests race past the check above, the DB's partial unique index → 409.
-    return this.prisma.$transaction(async (tx) => {
-      const request = await tx.rentalRequest.create({
-        data: {
-          listingId,
-          renterId: user.id,
-          startDate: new Date(dto.startDate),
-          months: dto.months,
-          note: dto.note,
-        },
-        include: requestInclude,
-      });
-      await this.notifications.create(
-        {
-          userId: listing.ownerId,
-          type: NotificationType.NEW_RENTAL_REQUEST,
-          title: 'Шинэ түрээсийн хүсэлт',
-          body: `${request.renter.fullName} таны "${listing.title}" зарт хүсэлт илгээлээ.`,
-          data: { listingId, requestId: request.id },
-        },
-        tx,
-      );
-      return toView(request);
-    });
+    const [request, notification] = await this.prisma.$transaction(
+      async (tx) => {
+        const request = await tx.rentalRequest.create({
+          data: {
+            listingId,
+            renterId: user.id,
+            startDate: new Date(dto.startDate),
+            months: dto.months,
+            note: dto.note,
+          },
+          include: requestInclude,
+        });
+        const notification = await this.notifications.create(
+          {
+            userId: listing.ownerId,
+            type: NotificationType.NEW_RENTAL_REQUEST,
+            title: 'Шинэ түрээсийн хүсэлт',
+            body: `${request.renter.fullName} таны "${listing.title}" зарт хүсэлт илгээлээ.`,
+            data: { listingId, requestId: request.id },
+          },
+          tx,
+        );
+        return [request, notification] as const;
+      },
+    );
+    this.notifications.publish(notification);
+    return toView(request);
   }
 
   async cancel(id: bigint, user: AuthUser) {
@@ -102,12 +110,71 @@ export class RentalRequestsService {
 
   // ---------------------------------------------------------------- owner
 
-  approve(id: bigint, user: AuthUser) {
-    return this.answer(id, user, RequestStatus.APPROVED);
+  /**
+   * Approving means the place is taken: the listing becomes RENTED and every
+   * other PENDING request on it is rejected (and those renters are told why).
+   */
+  async approve(id: bigint, user: AuthUser) {
+    const request = await this.findPendingForOwner(id, user);
+    const { listing } = request;
+    const now = new Date();
+
+    const notifications = await this.prisma.$transaction(async (tx) => {
+      await this.setStatusIfPending(tx, id, {
+        status: RequestStatus.APPROVED,
+        respondedAt: now,
+      });
+      await tx.listing.updateMany({
+        where: {
+          id: listing.id,
+          status: { in: [ListingStatus.ACTIVE, ListingStatus.INACTIVE] },
+        },
+        data: { status: ListingStatus.RENTED },
+      });
+
+      const others = await tx.rentalRequest.findMany({
+        where: { listingId: listing.id, status: RequestStatus.PENDING },
+        select: { id: true, renterId: true },
+      });
+      await tx.rentalRequest.updateMany({
+        where: { id: { in: others.map((o) => o.id) } },
+        data: {
+          status: RequestStatus.REJECTED,
+          rejectReason: TAKEN_REASON,
+          respondedAt: now,
+        },
+      });
+
+      const notices = [
+        approvedNotice(listing, request.renterId, id),
+        ...others.map((o) =>
+          rejectedNotice(listing, o.renterId, o.id, TAKEN_REASON),
+        ),
+      ];
+      return Promise.all(notices.map((n) => this.notifications.create(n, tx)));
+    });
+
+    this.notifications.publish(...notifications);
+    return this.findOne(id, user);
   }
 
-  reject(id: bigint, user: AuthUser, reason?: string) {
-    return this.answer(id, user, RequestStatus.REJECTED, reason);
+  async reject(id: bigint, user: AuthUser, reason?: string) {
+    const request = await this.findPendingForOwner(id, user);
+
+    const notification = await this.prisma.$transaction(async (tx) => {
+      await this.setStatusIfPending(tx, id, {
+        status: RequestStatus.REJECTED,
+        rejectReason: reason,
+        respondedAt: new Date(),
+      });
+      return this.notifications.create(
+        rejectedNotice(request.listing, request.renterId, id, reason),
+        tx,
+      );
+    });
+
+    this.notifications.publish(notification);
+    return this.findOne(id, user);
   }
 
   // ---------------------------------------------------------------- read
@@ -182,12 +249,8 @@ export class RentalRequestsService {
     }
   }
 
-  private async answer(
-    id: bigint,
-    user: AuthUser,
-    status: Answer,
-    reason?: string,
-  ) {
+  /** Only the listing owner can answer, and only while the request is PENDING. */
+  private async findPendingForOwner(id: bigint, user: AuthUser) {
     const request = await this.prisma.rentalRequest.findUnique({
       where: { id },
       include: {
@@ -201,35 +264,7 @@ export class RentalRequestsService {
     if (request.status !== RequestStatus.PENDING) {
       throw new ConflictException(`Request is already ${request.status}`);
     }
-
-    const isApproved = status === RequestStatus.APPROVED;
-    const { title } = request.listing;
-
-    await this.prisma.$transaction(async (tx) => {
-      await this.setStatusIfPending(tx, id, {
-        status,
-        rejectReason: isApproved ? null : reason,
-        respondedAt: new Date(),
-      });
-      await this.notifications.create(
-        {
-          userId: request.renterId,
-          type: isApproved
-            ? NotificationType.RENTAL_REQUEST_APPROVED
-            : NotificationType.RENTAL_REQUEST_REJECTED,
-          title: isApproved
-            ? 'Түрээсийн хүсэлт зөвшөөрөгдлөө'
-            : 'Түрээсийн хүсэлт татгалзагдлаа',
-          body: isApproved
-            ? `"${title}" зарын эзэмшигч таны хүсэлтийг зөвшөөрлөө.`
-            : `"${title}" зарын эзэмшигч таны хүсэлтийг татгалзлаа.` +
-              (reason ? ` Шалтгаан: ${reason}` : ''),
-          data: { listingId: request.listing.id, requestId: id },
-        },
-        tx,
-      );
-    });
-    return this.findOne(id, user);
+    return request;
   }
 
   /** Conditional update, so two quick clicks can't both change a PENDING request. */
@@ -262,6 +297,40 @@ export class RentalRequestsService {
     );
     return page.map(toView);
   }
+}
+
+// ---------------------------------------------------------------- helpers
+
+type ListingRef = Pick<Listing, 'id' | 'title'>;
+
+function approvedNotice(
+  listing: ListingRef,
+  renterId: bigint,
+  requestId: bigint,
+): NotificationInput {
+  return {
+    userId: renterId,
+    type: NotificationType.RENTAL_REQUEST_APPROVED,
+    title: 'Түрээсийн хүсэлт зөвшөөрөгдлөө',
+    body: `"${listing.title}" зарын эзэмшигч таны хүсэлтийг зөвшөөрлөө.`,
+    data: { listingId: listing.id, requestId },
+  };
+}
+
+function rejectedNotice(
+  listing: ListingRef,
+  renterId: bigint,
+  requestId: bigint,
+  reason?: string,
+): NotificationInput {
+  const why = reason ? ` Шалтгаан: ${reason}` : '';
+  return {
+    userId: renterId,
+    type: NotificationType.RENTAL_REQUEST_REJECTED,
+    title: 'Түрээсийн хүсэлт татгалзагдлаа',
+    body: `"${listing.title}" зарын эзэмшигч таны хүсэлтийг татгалзлаа.${why}`,
+    data: { listingId: listing.id, requestId },
+  };
 }
 
 function toView<T extends Pick<RequestRow, 'listing'>>(request: T) {
