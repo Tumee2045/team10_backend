@@ -35,6 +35,16 @@ Seeded admin: `admin@example.com` / `Admin12345`. You can change these with `SEE
 | `npm test` / `npm run test:e2e`      | Unit tests / e2e tests (e2e needs a seeded DB)            |
 | `npm run lint`                       | ESLint + Prettier                                         |
 
+## Deploy (free: Render + Neon)
+
+- **Database:** [Neon](https://neon.com) Postgres. Use the **direct** connection string (not the `-pooler` one), with `?sslmode=require`.
+- **API:** [Render](https://render.com) free web service, configured by [`render.yaml`](render.yaml) (Render → New → Blueprint).
+  - Build: `npm ci && npm run build`
+  - Start: `npm run start:deploy`. On every deploy this applies migrations, upserts the lookups and admin, then starts the API.
+  - Health check: `/api/health`
+- Free instances sleep after 15 min without traffic, so the first request afterwards takes ~1 min.
+- `CORS_ORIGINS` must list every frontend origin (e.g. `http://localhost:5173`), for both REST and WebSocket.
+
 ## Structure
 
 ```
