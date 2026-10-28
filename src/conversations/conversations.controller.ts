@@ -29,17 +29,16 @@ export class ConversationsController {
   }
 
   @Get(':id')
-  findOne(@CurrentUser() user: AuthUser, @IdParam() id: bigint) {
-    return this.conversations.findOne(user, id);
-  }
-
-  @Get(':id/messages')
-  findMessages(
+  @ApiOperation({
+    summary:
+      'Conversation + message history (use ?before=<messageId> for older)',
+  })
+  findOne(
     @CurrentUser() user: AuthUser,
     @IdParam() id: bigint,
     @Query() query: MessagesQueryDto,
   ) {
-    return this.conversations.findMessages(user, id, query);
+    return this.conversations.findOne(user, id, query);
   }
 
   @Post(':id/messages')

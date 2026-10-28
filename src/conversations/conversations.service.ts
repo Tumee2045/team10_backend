@@ -85,7 +85,12 @@ export class ConversationsService {
     return Promise.all(rows.map((row) => this.toView(row, user.id)));
   }
 
-  async findOne(user: AuthUser, id: bigint) {
+  /**
+   * The conversation plus its message history (oldest → newest).
+   * Pass `before` (a message id) to load an older page. Reading does not mark
+   * the chat as read; the client calls `markAsRead` for that.
+   */
+  async findOne(user: AuthUser, id: bigint, query: MessagesQueryDto) {
     const row = await this.prisma.conversation.findUnique({
       where: { id },
       include: conversationInclude,
@@ -93,23 +98,12 @@ export class ConversationsService {
     if (!row || !isParticipant(row, user.id)) {
       throw new NotFoundException('Conversation not found');
     }
-    return this.toView(row, user.id);
-  }
 
-  /** History oldest → newest. Pass `before` (a message id) to load older pages. */
-  async findMessages(user: AuthUser, id: bigint, query: MessagesQueryDto) {
-    await this.findParticipating(user, id);
-    const rows = await this.prisma.message.findMany({
-      where: {
-        conversationId: id,
-        id: query.before ? { lt: BigInt(query.before) } : undefined,
-      },
-      orderBy: { id: 'desc' },
-      take: query.limit + 1, // one extra row tells us if there are more
-    });
-
-    const hasMore = rows.length > query.limit;
-    return { items: rows.slice(0, query.limit).reverse(), hasMore };
+    const [conversation, messages] = await Promise.all([
+      this.toView(row, user.id),
+      this.findMessages(id, query),
+    ]);
+    return { ...conversation, messages };
   }
 
   async sendMessage(user: AuthUser, id: bigint, body: string) {
@@ -172,6 +166,21 @@ export class ConversationsService {
   }
 
   // ---------------------------------------------------------------- private
+
+  /** One page of history, oldest → newest. One extra row tells us if there are more. */
+  private async findMessages(id: bigint, query: MessagesQueryDto) {
+    const rows = await this.prisma.message.findMany({
+      where: {
+        conversationId: id,
+        id: query.before ? { lt: BigInt(query.before) } : undefined,
+      },
+      orderBy: { id: 'desc' },
+      take: query.limit + 1,
+    });
+
+    const hasMore = rows.length > query.limit;
+    return { items: rows.slice(0, query.limit).reverse(), hasMore };
+  }
 
   private async findParticipating(user: AuthUser, id: bigint) {
     const conversation = await this.prisma.conversation.findUnique({

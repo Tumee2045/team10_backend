@@ -64,42 +64,11 @@ export class ListingPhotosService {
     return this.list(listingId);
   }
 
-  /** `photoIds` must contain every photo of the listing exactly once, in the new order. */
-  async reorder(listingId: bigint, user: AuthUser, photoIds: number[]) {
-    await this.listings.findOwned(listingId, user);
-    const ids = photoIds.map((id) => BigInt(id));
-    await this.assertSamePhotos(listingId, ids);
-
-    await this.prisma.$transaction(
-      ids.map((id, sortOrder) =>
-        this.prisma.listingPhoto.update({ where: { id }, data: { sortOrder } }),
-      ),
-    );
-    return this.list(listingId);
-  }
-
   private list(listingId: bigint) {
     return this.prisma.listingPhoto.findMany({
       where: { listingId },
       select: { id: true, url: true, sortOrder: true },
       orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
     });
-  }
-
-  private async assertSamePhotos(listingId: bigint, ids: bigint[]) {
-    const existing = await this.prisma.listingPhoto.findMany({
-      where: { listingId },
-      select: { id: true },
-    });
-    const existingIds = new Set(existing.map((p) => p.id));
-    const isSameSet =
-      ids.length === existingIds.size &&
-      new Set(ids).size === ids.length &&
-      ids.every((id) => existingIds.has(id));
-    if (!isSameSet) {
-      throw new BadRequestException(
-        'photoIds must list every photo of this listing exactly once',
-      );
-    }
   }
 }

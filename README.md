@@ -2,6 +2,8 @@
 
 NestJS 11 · PostgreSQL · Prisma 6 · JWT · Cloudinary
 
+> **Frontend developers:** start with [FRONTEND.md](FRONTEND.md). It covers URLs, the response format, auth, every screen's endpoints and WebSocket.
+
 ## Setup
 
 Requirements: Node 20+ and PostgreSQL 14+ running locally.
@@ -67,21 +69,21 @@ Each feature folder has `*.controller.ts` (HTTP), `*.service.ts` (business rules
 
 Every path starts with `/api`. 🔓 = works without a token.
 
-| Area            | Endpoints                                                                                                                                                               |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth            | 🔓 `POST /auth/register`, 🔓 `POST /auth/login` → `{ accessToken, user }`                                                                                               |
-| Users           | `GET/PATCH /users/me`, `PATCH /users/me/password`, `POST /users/me/avatar`, 🔓 `GET /users/:id`, 🔓 `GET /users/:id/reviews`                                            |
-| Lookups         | 🔓 `GET /districts`, 🔓 `GET /amenities`                                                                                                                                |
-| Listings        | 🔓 `GET /listings` (search), 🔓 `GET /listings/map`, 🔓 `GET /listings/:id`, `GET /listings/mine`, `POST /listings`, `PATCH /listings/:id`, `DELETE /listings/:id`      |
-| Listing status  | `POST /listings/:id/publish`, `/deactivate`, `/mark-rented`, `/mark-sold`                                                                                               |
-| Photos          | `POST /listings/:id/photos` (multipart `files`), `PUT /listings/:id/photos/order`, `DELETE /listings/:id/photos/:photoId`                                               |
-| Favorites       | `GET /favorites`, `PUT /favorites/:listingId`, `DELETE /favorites/:listingId`                                                                                           |
-| Saved searches  | `GET/POST /saved-searches`, `PATCH/DELETE /saved-searches/:id`, `GET /saved-searches/:id/listings`                                                                      |
-| Rental requests | `POST /rental-requests`, `GET /rental-requests/sent`, `GET /rental-requests/received`, `GET /rental-requests/:id`, `POST …/:id/approve`, `…/reject`, `…/cancel`         |
-| Chat            | `POST /conversations` (open with listing owner), `GET /conversations`, `GET /conversations/:id`, `GET/POST /conversations/:id/messages`, `POST /conversations/:id/read` |
-| Reviews         | `POST /reviews`, `PATCH /reviews/:id`                                                                                                                                   |
-| Notifications   | `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/:id/read`, `POST /notifications/read-all`                                                 |
-| Health          | 🔓 `GET /health`                                                                                                                                                        |
+| Area            | Endpoints                                                                                                                                                                                                 |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth            | 🔓 `POST /auth/register`, 🔓 `POST /auth/login` → `{ accessToken, user }`                                                                                                                                 |
+| Users           | `GET/PATCH /users/me`, `PATCH /users/me/password`, `POST /users/me/avatar`, 🔓 `GET /users/:id`, 🔓 `GET /users/:id/reviews`                                                                              |
+| Lookups         | 🔓 `GET /districts`, 🔓 `GET /amenities`                                                                                                                                                                  |
+| Listings        | 🔓 `GET /listings` (search), 🔓 `GET /listings/map`, 🔓 `GET /listings/:id`, `GET /listings/mine`, `POST /listings`, `PATCH /listings/:id`, `DELETE /listings/:id`                                        |
+| Listing status  | `PATCH /listings/:id/status` with `{ status: ACTIVE \| INACTIVE \| RENTED \| SOLD }`                                                                                                                      |
+| Photos          | `POST /listings/:id/photos` (multipart `files`; the first photo is the cover), `DELETE /listings/:id/photos/:photoId`                                                                                     |
+| Favorites       | `GET /favorites`, `PUT /favorites/:listingId`, `DELETE /favorites/:listingId`                                                                                                                             |
+| Saved searches  | `GET/POST /saved-searches`, `DELETE /saved-searches/:id`. Stores named filters; run them with `GET /listings?…`                                                                                           |
+| Rental requests | `POST /rental-requests`, `GET /rental-requests/sent`, `GET /rental-requests/received`, `GET /rental-requests/:id`, `POST …/:id/approve`, `…/reject`, `…/cancel`                                           |
+| Chat            | `POST /conversations` (open with listing owner), `GET /conversations`, `GET /conversations/:id` (with messages, `?before=` for older), `POST /conversations/:id/messages`, `POST /conversations/:id/read` |
+| Reviews         | `POST /reviews`, `PATCH /reviews/:id`                                                                                                                                                                     |
+| Notifications   | `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/:id/read`, `POST /notifications/read-all`                                                                                   |
+| Health          | 🔓 `GET /health`                                                                                                                                                                                          |
 
 ### Search query params (`GET /listings`, `/listings/map`)
 
@@ -91,16 +93,17 @@ Every path starts with `/api`. 🔓 = works without a token.
 
 ## Business rules
 
-- **Listing status:** `DRAFT → ACTIVE` (publish) · `ACTIVE → INACTIVE` (deactivate) · `ACTIVE/INACTIVE → RENTED|SOLD` · `INACTIVE/RENTED → ACTIVE`.
+- **Listing status** (`PATCH /listings/:id/status`): `DRAFT/INACTIVE/RENTED → ACTIVE` (publish) · `ACTIVE → INACTIVE` (hide) · `ACTIVE/INACTIVE → RENTED` (RENT only) or `→ SOLD` (SALE only). Anything else → **409**.
+  The listing type (RENT/SALE) can't be changed after creation.
   The public can only open ACTIVE, RENTED and SOLD listings. DRAFT and INACTIVE are visible to the owner and admins only.
 - **Price:** a RENT listing needs `monthlyRent`, a SALE listing needs `salePrice`. Fields that don't fit the listing type are cleared. The database enforces this too.
 - **Rental request:** only for ACTIVE RENT listings that aren't your own. `months ≥ minMonths`, and the start date can't be in the past.
   Only one PENDING request per (listing, renter) is allowed; a second one returns **409**. Only the owner can approve or reject; only the renter can cancel.
   **Approving** marks the listing RENTED and automatically rejects every other PENDING request on it
-  (reason: "Зар өөр хүнд түрээслэгдсэн"), and those renters are notified. To rent it out again, the owner calls `publish`.
+  (reason: "Зар өөр хүнд түрээслэгдсэн"), and those renters are notified. To rent it out again, the owner sets the status back to `ACTIVE`.
 - **Reviews:** only after an APPROVED request. The renter and owner each review the other once (rating 1–5).
 - **Chat:** one conversation per (listing, interested user). Unread count = the other person's messages after your `*_last_read_at`. A recipient gets at most one unread `NEW_MESSAGE` notification per conversation.
-- **Admin:** can view and delete any listing, and can deactivate any listing.
+- **Admin:** can view and delete any listing, and can set any listing to `INACTIVE`.
 
 ## API conventions
 
@@ -144,6 +147,7 @@ Every response, success or error, has the same top-level shape:
 
 `error` is one of: `BAD_REQUEST`, `VALIDATION_ERROR`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`,
 `PAYLOAD_TOO_LARGE`, `SERVICE_UNAVAILABLE`, `INTERNAL_ERROR`.
-Chat history (`GET /conversations/:id/messages`) loads older pages by message id instead, so its `data` is `{ items, hasMore }`.
+A chat (`GET /conversations/:id`) loads older messages by message id instead of page numbers: `data.messages` is `{ items, hasMore }`.
+Opening a chat does not mark it as read. Call `POST /conversations/:id/read` for that.
 
 The code standard is in [CONTRIBUTING.md](CONTRIBUTING.md).

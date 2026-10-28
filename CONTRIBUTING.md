@@ -96,7 +96,7 @@ src/<feature>/
 ```
 
 - Files: `kebab-case`. Classes: `PascalCase`. Methods and variables: `camelCase`. DB: `snake_case` via `@map`.
-- Method names: `findAll`, `findOne`, `findMine`, `create`, `update`, `remove`, plus domain verbs from the class diagram (`publish`, `markAsRented`, `approve`, …).
+- Method names: `findAll`, `findOne`, `findMine`, `create`, `update`, `remove`, plus domain verbs from the class diagram (`changeStatus`, `approve`, `reject`, …).
 - Private checks that throw start with `assert…` (`assertCanRequest`).
 - Booleans read as yes/no questions: `isOwner`, `hasMore`, `canView`.
 

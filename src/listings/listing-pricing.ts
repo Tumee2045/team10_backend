@@ -1,64 +1,37 @@
 import { BadRequestException } from '@nestjs/common';
-import { Listing, ListingType } from '@prisma/client';
+import { ListingType } from '@prisma/client';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 
-/** Price fields as the API sends them (MNT as plain numbers). */
-export interface PriceInput {
-  listingType: ListingType;
-  monthlyRent?: number;
-  deposit?: number;
-  minMonths?: number;
-  utilitiesIncluded?: boolean;
-  salePrice?: number;
+type PriceFields = Pick<
+  CreateListingDto,
+  'monthlyRent' | 'deposit' | 'minMonths' | 'utilitiesIncluded' | 'salePrice'
+>;
+
+/** RENT needs monthlyRent, SALE needs salePrice (the DB has the same CHECK). */
+export function assertPriceFor(type: ListingType, dto: PriceFields) {
+  if (type === ListingType.RENT && dto.monthlyRent === undefined) {
+    throw new BadRequestException('monthlyRent is required for RENT listings');
+  }
+  if (type === ListingType.SALE && dto.salePrice === undefined) {
+    throw new BadRequestException('salePrice is required for SALE listings');
+  }
 }
 
 /**
- * Price columns for the DB.
- * RENT needs monthlyRent, SALE needs salePrice (the DB has the same CHECK).
- * Fields that don't belong to the listing type are cleared.
+ * Only the price columns that belong to the listing type; the others are ignored.
+ * Undefined values are skipped by Prisma, so on update they mean "unchanged".
  */
-export function resolvePricing(input: PriceInput) {
-  if (input.listingType === ListingType.RENT) {
-    if (input.monthlyRent === undefined) {
-      throw new BadRequestException(
-        'monthlyRent is required for RENT listings',
-      );
-    }
+export function priceColumns(type: ListingType, dto: PriceFields) {
+  if (type === ListingType.RENT) {
     return {
-      monthlyRent: BigInt(input.monthlyRent),
-      deposit: toBigIntOrNull(input.deposit),
-      minMonths: input.minMonths ?? null,
-      utilitiesIncluded: input.utilitiesIncluded ?? false,
-      salePrice: null,
+      monthlyRent: toBigInt(dto.monthlyRent),
+      deposit: toBigInt(dto.deposit),
+      minMonths: dto.minMonths,
+      utilitiesIncluded: dto.utilitiesIncluded,
     };
   }
-
-  if (input.salePrice === undefined) {
-    throw new BadRequestException('salePrice is required for SALE listings');
-  }
-  return {
-    monthlyRent: null,
-    deposit: null,
-    minMonths: null,
-    utilitiesIncluded: false,
-    salePrice: BigInt(input.salePrice),
-  };
-}
-
-/** For updates: the new value if sent, otherwise what the listing already has. */
-export function mergePricing(
-  current: Listing,
-  dto: UpdateListingDto,
-): PriceInput {
-  return {
-    listingType: dto.listingType ?? current.listingType,
-    monthlyRent: dto.monthlyRent ?? toNumberOrUndefined(current.monthlyRent),
-    deposit: dto.deposit ?? toNumberOrUndefined(current.deposit),
-    minMonths: dto.minMonths ?? current.minMonths ?? undefined,
-    utilitiesIncluded: dto.utilitiesIncluded ?? current.utilitiesIncluded,
-    salePrice: dto.salePrice ?? toNumberOrUndefined(current.salePrice),
-  };
+  return { salePrice: toBigInt(dto.salePrice) };
 }
 
 /** Non-price fields of the DTO, converted to DB types. */
@@ -81,10 +54,6 @@ export function toListingFields<T extends UpdateListingDto | CreateListingDto>(
   };
 }
 
-function toBigIntOrNull(value?: number) {
-  return value === undefined ? null : BigInt(value);
-}
-
-function toNumberOrUndefined(value: bigint | null) {
-  return value === null ? undefined : Number(value);
+function toBigInt(value?: number) {
+  return value === undefined ? undefined : BigInt(value);
 }

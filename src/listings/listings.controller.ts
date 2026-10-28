@@ -12,13 +12,14 @@ import type { AuthUser } from '../common/auth-user';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { ResponseMessage } from '../common/http/response-message.decorator';
+import { ChangeStatusDto } from './dto/change-status.dto';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { ListingQueryDto } from './dto/listing-query.dto';
 import { MyListingsQueryDto } from './dto/my-listings-query.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { ListingSearchService } from './listing-search.service';
 import { ListingsService } from './listings.service';
-import { Action, IdParam } from '../common/http/route.decorators';
+import { IdParam } from '../common/http/route.decorators';
 
 @ApiTags('listings')
 @Controller('listings')
@@ -81,33 +82,17 @@ export class ListingsController {
     return this.listings.remove(id, user);
   }
 
-  // ---------------------------------------------------------------- status
-
-  @Post(':id/publish')
-  @Action('Listing published')
-  @ApiOperation({ summary: 'DRAFT / INACTIVE / RENTED → ACTIVE' })
-  publish(@IdParam() id: bigint, @CurrentUser() user: AuthUser) {
-    return this.listings.publish(id, user);
-  }
-
-  @Post(':id/deactivate')
-  @Action('Listing deactivated')
-  @ApiOperation({ summary: 'ACTIVE → INACTIVE (owner or ADMIN)' })
-  deactivate(@IdParam() id: bigint, @CurrentUser() user: AuthUser) {
-    return this.listings.deactivate(id, user);
-  }
-
-  @Post(':id/mark-rented')
-  @Action('Listing marked as rented')
-  @ApiOperation({ summary: 'RENT listing → RENTED' })
-  markAsRented(@IdParam() id: bigint, @CurrentUser() user: AuthUser) {
-    return this.listings.markAsRented(id, user);
-  }
-
-  @Post(':id/mark-sold')
-  @Action('Listing marked as sold')
-  @ApiOperation({ summary: 'SALE listing → SOLD' })
-  markAsSold(@IdParam() id: bigint, @CurrentUser() user: AuthUser) {
-    return this.listings.markAsSold(id, user);
+  @Patch(':id/status')
+  @ApiOperation({
+    summary:
+      'ACTIVE (publish) · INACTIVE (hide, owner or ADMIN) · RENTED (RENT only) · SOLD (SALE only)',
+  })
+  @ResponseMessage('Listing status updated')
+  changeStatus(
+    @IdParam() id: bigint,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: ChangeStatusDto,
+  ) {
+    return this.listings.changeStatus(id, user, dto.status);
   }
 }

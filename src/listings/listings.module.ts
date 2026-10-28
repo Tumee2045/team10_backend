@@ -8,6 +8,5 @@ import { ListingsService } from './listings.service';
 @Module({
   controllers: [ListingsController, ListingPhotosController],
   providers: [ListingsService, ListingSearchService, ListingPhotosService],
-  exports: [ListingSearchService],
 })
 export class ListingsModule {}

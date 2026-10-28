@@ -15,14 +15,14 @@ import { CreateListingDto } from './dto/create-listing.dto';
 import { MyListingsQueryDto } from './dto/my-listings-query.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import {
-  mergePricing,
-  resolvePricing,
+  assertPriceFor,
+  priceColumns,
   toListingFields,
 } from './listing-pricing';
 import {
   PUBLIC_STATUSES,
-  STATUS_TRANSITIONS,
-  StatusAction,
+  STATUS_RULES,
+  SettableStatus,
 } from './listing-status';
 import {
   listingCardSelect,
@@ -82,12 +82,13 @@ export class ListingsService {
 
   /** Creates a DRAFT, or an ACTIVE listing when `publish: true`. */
   async create(ownerId: bigint, dto: CreateListingDto) {
+    assertPriceFor(dto.listingType, dto);
     const { publish, ...fields } = toListingFields(dto);
 
     const listing = await this.prisma.listing.create({
       data: {
         ...fields,
-        ...resolvePricing(dto),
+        ...priceColumns(dto.listingType, dto),
         ownerId,
         status: publish ? ListingStatus.ACTIVE : ListingStatus.DRAFT,
         publishedAt: publish ? new Date() : null,
@@ -102,7 +103,6 @@ export class ListingsService {
 
   async update(id: bigint, user: AuthUser, dto: UpdateListingDto) {
     const current = await this.findOwned(id, user);
-    const pricing = resolvePricing(mergePricing(current, dto));
 
     const listing = await this.prisma.$transaction(async (tx) => {
       if (dto.amenityIds) {
@@ -116,28 +116,49 @@ export class ListingsService {
       }
       return tx.listing.update({
         where: { id },
-        data: { ...toListingFields(dto), ...pricing },
+        data: {
+          ...toListingFields(dto),
+          ...priceColumns(current.listingType, dto),
+        },
         include: listingDetailInclude,
       });
     });
     return toListingDetail(listing);
   }
 
-  publish(id: bigint, user: AuthUser) {
-    return this.changeStatus(id, user, 'publish');
-  }
+  /**
+   * Publish (ACTIVE), hide (INACTIVE), or mark as RENTED / SOLD.
+   * Hiding is also allowed for ADMIN (moderation).
+   */
+  async changeStatus(id: bigint, user: AuthUser, status: SettableStatus) {
+    const rule = STATUS_RULES[status];
+    const current = await this.findOwned(id, user, {
+      allowAdmin: status === ListingStatus.INACTIVE,
+    });
 
-  /** Owner or ADMIN. */
-  deactivate(id: bigint, user: AuthUser) {
-    return this.changeStatus(id, user, 'deactivate');
-  }
+    if (rule.onlyFor && current.listingType !== rule.onlyFor) {
+      throw new BadRequestException(
+        `${status} is only for ${rule.onlyFor} listings`,
+      );
+    }
+    if (!rule.from.includes(current.status)) {
+      throw new ConflictException(
+        `Cannot change status from ${current.status} to ${status}`,
+      );
+    }
 
-  markAsRented(id: bigint, user: AuthUser) {
-    return this.changeStatus(id, user, 'markAsRented');
-  }
-
-  markAsSold(id: bigint, user: AuthUser) {
-    return this.changeStatus(id, user, 'markAsSold');
+    const isGoingLive = status === ListingStatus.ACTIVE;
+    const listing = await this.prisma.listing.update({
+      where: { id },
+      data: {
+        status,
+        publishedAt: isGoingLive
+          ? (current.publishedAt ?? new Date())
+          : undefined,
+      },
+      include: listingDetailInclude,
+    });
+    return toListingDetail(listing);
   }
 
   /** Owner or ADMIN. Photos, requests and chats are deleted with it (DB cascade). */
@@ -173,37 +194,6 @@ export class ListingsService {
   }
 
   // ---------------------------------------------------------------- private
-
-  private async changeStatus(id: bigint, user: AuthUser, action: StatusAction) {
-    const transition = STATUS_TRANSITIONS[action];
-    const current = await this.findOwned(id, user, {
-      allowAdmin: action === 'deactivate',
-    });
-
-    if (transition.onlyFor && current.listingType !== transition.onlyFor) {
-      throw new BadRequestException(
-        `${action} is only for ${transition.onlyFor} listings`,
-      );
-    }
-    if (!transition.from.includes(current.status)) {
-      throw new ConflictException(
-        `Cannot ${action} a listing with status ${current.status}`,
-      );
-    }
-
-    const isGoingLive = transition.to === ListingStatus.ACTIVE;
-    const listing = await this.prisma.listing.update({
-      where: { id },
-      data: {
-        status: transition.to,
-        publishedAt: isGoingLive
-          ? (current.publishedAt ?? new Date())
-          : undefined,
-      },
-      include: listingDetailInclude,
-    });
-    return toListingDetail(listing);
-  }
 
   private canView(
     listing: { ownerId: bigint; status: ListingStatus },

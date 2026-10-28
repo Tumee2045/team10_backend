@@ -1,9 +1,7 @@
 import {
-  Body,
   Controller,
   Delete,
   Post,
-  Put,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
@@ -13,7 +11,6 @@ import type { AuthUser } from '../common/auth-user';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ResponseMessage } from '../common/http/response-message.decorator';
 import { ImageFilesPipe } from '../common/pipes/image-files.pipe';
-import { ReorderPhotosDto } from './dto/reorder-photos.dto';
 import {
   ListingPhotosService,
   MAX_PHOTOS_PER_LISTING,
@@ -27,7 +24,7 @@ export class ListingPhotosController {
 
   @Post()
   @ApiOperation({
-    summary: `Upload photos (multipart field "files", max ${MAX_PHOTOS_PER_LISTING} per listing)`,
+    summary: `Upload photos (multipart field "files", max ${MAX_PHOTOS_PER_LISTING} per listing). The first photo is the cover.`,
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -46,17 +43,6 @@ export class ListingPhotosController {
     @UploadedFiles(ImageFilesPipe) files: Express.Multer.File[],
   ) {
     return this.photos.add(listingId, user, files);
-  }
-
-  @Put('order')
-  @ApiOperation({ summary: 'Reorder photos. The first one becomes the cover.' })
-  @ResponseMessage('Photos reordered')
-  reorder(
-    @IdParam('listingId') listingId: bigint,
-    @CurrentUser() user: AuthUser,
-    @Body() dto: ReorderPhotosDto,
-  ) {
-    return this.photos.reorder(listingId, user, dto.photoIds);
   }
 
   @Delete(':photoId')
